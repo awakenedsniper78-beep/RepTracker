@@ -29,6 +29,7 @@
       <h1 class="lock-title">RepTracker</h1>
       <p class="lock-sub" id="lock-sub">Loading…</p>
       <form id="lock-form" autocomplete="on" hidden>
+        <input type="password" id="lock-current" name="current-password" placeholder="Current password" autocomplete="current-password" maxlength="128" hidden>
         <input type="text" id="lock-user" name="username" placeholder="Username" autocomplete="username"
                autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
         <input type="password" id="lock-pass" name="password" placeholder="Password" autocomplete="current-password" maxlength="128" required>
@@ -36,6 +37,7 @@
         <p class="lock-error" id="lock-error" role="alert"></p>
         <button class="btn block" type="submit" id="lock-submit">Unlock</button>
       </form>
+      <button class="link-btn" id="lock-create" hidden>Create a new username &amp; password</button>
       <button class="link-btn" id="lock-forgot" hidden>Forgot password?</button>
     </div>
   </div>

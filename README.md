@@ -22,8 +22,9 @@ no build step, no backend. All data stays on your device in IndexedDB.
   time the app opens and after a minute in the background. It's a local lock, not
   an online account: only a salted PBKDF2-SHA256 hash is stored, 5 wrong tries
   trigger growing timeouts, and a forgotten password can only be cleared by
-  erasing the device's data (so keep a backup). The lock is never exported, and
-  imports can't change it.
+  erasing the device's data (so keep a backup). New credentials can be set from
+  the lock screen or from Settings, and both ask for the current password first.
+  The lock is never exported, and imports can't change it.
 - **Offline**: a service worker caches the whole app; Chart.js is bundled in `vendor/`
 - **Reminders**: in-app banner + same-session notification, plus optional daily Web Push
 
