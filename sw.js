@@ -16,9 +16,32 @@ const SHELL = [
   'vendor/chart.umd.min.js',
   'icons/icon-192-v2.png',
   'icons/icon-512-v2.png',
+  'icons/icon-1024-v2.png',
   'icons/apple-touch-icon-v2.png',
+  'icons/apple-touch-icon-167-v2.png',
+  'icons/apple-touch-icon-152-v2.png',
   'icons/favicon-32.png',
 ];
+
+// index.html and manifest.json are the two files that *name* every other URL —
+// icons included. A stale copy points the browser at files that no longer exist
+// (a renamed icon then 404s, and iOS falls back to a generated letter tile), so
+// these two are fetched fresh whenever the network answers in time.
+const FRESH_TIMEOUT_MS = 2500;
+
+async function freshFirst(req, cache, key) {
+  try {
+    const res = await Promise.race([
+      fetch(req, { cache: 'no-cache' }),
+      new Promise((_, reject) => setTimeout(reject, FRESH_TIMEOUT_MS, new Error('slow'))),
+    ]);
+    if (res && res.ok) {
+      await cache.put(key, res.clone());
+      return res;
+    }
+  } catch (err) { /* offline or slow: use the cached copy below */ }
+  return cache.match(key);
+}
 
 importScripts('js/stats.js', 'js/db.js');
 
@@ -43,13 +66,17 @@ self.addEventListener('message', (event) => {
 // Cache-first for the app shell (fully offline); network with cache fallback otherwise.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  const url = new URL(req.url);
+  if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     if (req.mode === 'navigate') {
-      // Any navigation (incl. ?view=… deep links) is served by the cached shell.
-      return (await cache.match('index.html')) || fetch(req);
+      // Any navigation (incl. ?view=… deep links) is served by the shell.
+      return (await freshFirst(req, cache, 'index.html')) || fetch(req);
+    }
+    if (url.pathname.endsWith('/manifest.json')) {
+      return (await freshFirst(req, cache, 'manifest.json')) || fetch(req);
     }
     const hit = await cache.match(req, { ignoreSearch: true });
     if (hit) return hit;

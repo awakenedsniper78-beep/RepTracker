@@ -70,7 +70,15 @@
 
   const fmt = (n) => Math.round(n).toLocaleString();
 
+  let pendingToast = null;
+
   function toast(msg, action) {
+    if (document.body.classList.contains('locked')) {
+      // Toasts are hidden behind the lock screen, so hold this one until the app
+      // is open — otherwise prompts like "a new version is ready" expire unseen.
+      if (!(pendingToast && pendingToast.action && !action)) pendingToast = { msg, action };
+      return;
+    }
     const t = $('#toast');
     t.textContent = msg;
     if (action) {
@@ -79,6 +87,13 @@
     t.hidden = false;
     clearTimeout(toast.timer);
     toast.timer = setTimeout(() => { t.hidden = true; }, action ? 10000 : 2600);
+  }
+
+  /** Show whatever was raised while the lock screen was up. */
+  function flushPendingToast() {
+    const p = pendingToast;
+    pendingToast = null;
+    if (p) toast(p.msg, p.action);
   }
 
   /**
@@ -904,10 +919,13 @@
 
   /* ================= service worker ================= */
 
+  let swReg = null;
+
   async function registerSW() {
     if (!('serviceWorker' in navigator)) return;
     try {
       const reg = await navigator.serviceWorker.register('sw.js');
+      swReg = reg;
       const promptUpdate = (worker) => {
         toast('A new version is ready', {
           label: 'Update',
@@ -925,7 +943,7 @@
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (reloaded) return;
         reloaded = true;
-        window.location.reload();
+        flushSaves().catch(() => {}).then(() => window.location.reload());
       });
       // Check for a new version whenever the app comes back to the foreground.
       document.addEventListener('visibilitychange', () => {
@@ -933,6 +951,40 @@
       });
     } catch (err) {
       console.warn('SW registration failed', err);
+    }
+  }
+
+  /**
+   * Manual update check. The cached app shell names every other file (icons
+   * included), so a device stuck on an old cache keeps asking for files that
+   * have since been renamed — this is the way out without clearing Safari's
+   * website data.
+   */
+  async function onCheckUpdates() {
+    const status = $('#update-status');
+    const btn = $('#check-updates');
+    if (!swReg) { status.textContent = 'Offline caching isn\'t available in this browser.'; return; }
+    btn.disabled = true;
+    status.textContent = 'Checking…';
+    try {
+      await swReg.update();
+      if (swReg.installing) {
+        await new Promise((resolve) => {
+          const w = swReg.installing;
+          w.addEventListener('statechange', () => { if (w.state !== 'installing') resolve(); });
+        });
+      }
+      if (swReg.waiting) {
+        // The reload happens on controllerchange, once the new worker takes over.
+        status.textContent = 'Update found — reloading…';
+        swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        return;
+      }
+      status.textContent = `RepTracker v${CONFIG.version || 'dev'} is up to date.`;
+    } catch (err) {
+      status.textContent = 'Could not check for updates: ' + err.message;
+    } finally {
+      btn.disabled = false;
     }
   }
 
@@ -1120,6 +1172,7 @@
       $('#lock-form').hidden = true;
       unlocked = true;
       document.body.classList.remove('locked');
+      flushPendingToast();
       if (unlockResolve) { unlockResolve(); unlockResolve = null; }
     } catch (ex) {
       err.textContent = 'Something went wrong: ' + ex.message;
@@ -1198,6 +1251,7 @@
     $('#lock-forgot').addEventListener('click', onForgotPassword);
     $('#change-auth-form').addEventListener('submit', onChangeAuth);
     $('#lock-now').addEventListener('click', lockNow);
+    $('#check-updates').addEventListener('click', onCheckUpdates);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         hiddenAt = Date.now();
