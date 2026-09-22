@@ -1,0 +1,9 @@
+{
+  "name": "reptracker-push",
+  "private": true,
+  "type": "module",
+  "description": "Sends the daily RepTracker Web Push reminder (run by GitHub Actions).",
+  "dependencies": {
+    "web-push": "^3.6.7"
+  }
+}

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>RepTracker</title>
+  <meta name="description" content="Log daily push-ups, pull-ups and other bodyweight reps. Works offline.">
+
+  <!-- PWA / iOS home-screen install -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="RepTracker">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="screen-title">RepTracker</h1>
+  </header>
+
+  <main id="main">
+    <!-- ================= LOG ================= -->
+    <section id="view-log" class="view active" aria-labelledby="tab-log">
+      <div class="streak-card" id="streak-card">
+        <div class="streak-main">
+          <div class="streak-flame" aria-hidden="true">🔥</div>
+          <div>
+            <div class="streak-num"><span id="streak-current">0</span><span class="streak-unit"> day streak</span></div>
+            <div class="streak-sub" id="streak-status">Log something today to start a streak</div>
+          </div>
+        </div>
+        <div class="streak-best">
+          <div class="streak-best-num" id="streak-longest">0</div>
+          <div class="streak-best-label">best</div>
+        </div>
+      </div>
+
+      <div class="banner" id="reminder-banner" hidden>
+        <span aria-hidden="true">⏰</span>
+        <span id="reminder-text">Nothing logged today yet — keep the streak alive!</span>
+      </div>
+
+      <div class="datebar">
+        <button class="icon-btn" id="prev-day" aria-label="Previous day">‹</button>
+        <label class="date-picker">
+          <span id="date-label">Today</span>
+          <input type="date" id="date-input" aria-label="Choose date">
+        </label>
+        <button class="icon-btn" id="next-day" aria-label="Next day">›</button>
+      </div>
+      <button class="link-btn" id="jump-today" hidden>Jump to today</button>
+
+      <div id="exercise-list" class="exercise-list"></div>
+
+      <div class="day-total" id="day-total"></div>
+    </section>
+
+    <!-- ================= PROGRESS ================= -->
+    <section id="view-progress" class="view" aria-labelledby="tab-progress">
+      <div class="chips" id="chart-exercises" role="group" aria-label="Exercises to show"></div>
+      <div class="segmented" id="chart-range" role="group" aria-label="Time range">
+        <button data-range="30" class="active">30D</button>
+        <button data-range="90">90D</button>
+        <button data-range="365">1Y</button>
+        <button data-range="all">All</button>
+      </div>
+      <label class="toggle-row small">
+        <input type="checkbox" id="chart-trend">
+        <span>Show 7-day average trend</span>
+      </label>
+      <div class="chart-wrap">
+        <canvas id="chart" aria-label="Reps over time"></canvas>
+        <div class="chart-empty" id="chart-empty" hidden>No reps logged in this range yet.</div>
+      </div>
+      <div class="stats-grid" id="stats-grid"></div>
+
+      <h2 class="section-h">History</h2>
+      <ul class="history" id="history"></ul>
+      <button class="btn secondary block" id="history-more" hidden>Show more</button>
+    </section>
+
+    <!-- ================= SETTINGS ================= -->
+    <section id="view-settings" class="view" aria-labelledby="tab-settings">
+      <h2 class="section-h">Exercises</h2>
+      <ul class="ex-edit-list" id="ex-edit-list"></ul>
+      <form class="add-row" id="add-exercise-form">
+        <input type="text" id="new-exercise" placeholder="Add exercise (e.g. Squats)" maxlength="60" autocomplete="off">
+        <button class="btn" type="submit">Add</button>
+      </form>
+
+      <h2 class="section-h">Reminders</h2>
+      <div class="card">
+        <label class="toggle-row">
+          <input type="checkbox" id="reminder-enabled">
+          <span>Remind me when nothing is logged</span>
+        </label>
+        <label class="field-row">
+          <span>Reminder time</span>
+          <input type="time" id="reminder-time" value="19:00">
+        </label>
+        <p class="hint">While the app is open (or when you open it after this time), you'll get a reminder if today is empty.</p>
+        <button class="btn secondary block" id="notif-permission">Allow notifications</button>
+        <p class="hint" id="notif-status"></p>
+      </div>
+
+      <div class="card">
+        <h3 class="card-h">Daily push reminder <span class="tag">optional</span></h3>
+        <p class="hint">Sends a real notification at a fixed time even when the app is closed. Needs iOS 16.4+, the app installed to your Home Screen, and a one-time setup (see the README).</p>
+        <button class="btn secondary block" id="push-subscribe">Enable push reminders</button>
+        <div id="push-details" hidden>
+          <p class="hint">Copy this subscription and save it as the <code>PUSH_SUBSCRIPTIONS</code> secret in the GitHub repo:</p>
+          <textarea id="push-sub-json" readonly rows="5"></textarea>
+          <div class="btn-row">
+            <button class="btn" id="push-copy">Copy</button>
+            <a class="btn secondary" id="push-secrets-link" target="_blank" rel="noopener">Open repo secrets</a>
+          </div>
+          <button class="link-btn danger" id="push-unsubscribe">Turn off push reminders</button>
+        </div>
+        <p class="hint" id="push-status"></p>
+      </div>
+
+      <h2 class="section-h">Backup</h2>
+      <div class="card">
+        <p class="hint">Safari can clear website data after long inactivity. Export a backup now and then and keep it in Files or iCloud Drive.</p>
+        <p class="hint" id="backup-status"></p>
+        <div class="btn-row">
+          <button class="btn" id="export-btn">Export JSON</button>
+          <button class="btn secondary" id="import-btn">Import JSON</button>
+        </div>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+
+      <p class="footer-note">RepTracker · all data stays on this device · <span id="app-version"></span></p>
+    </section>
+  </main>
+
+  <nav class="tabbar" role="tablist">
+    <button role="tab" id="tab-log" data-view="log" class="active" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      <span>Log</span>
+    </button>
+    <button role="tab" id="tab-progress" data-view="progress" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19l5-6 4 3 7-9"/></svg>
+      <span>Progress</span>
+    </button>
+    <button role="tab" id="tab-settings" data-view="settings" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="dialog">
+    <form method="dialog">
+      <h3 id="dialog-title"></h3>
+      <p id="dialog-body"></p>
+      <div class="dialog-actions" id="dialog-actions"></div>
+    </form>
+  </dialog>
+
+  <script src="vendor/chart.umd.min.js" defer></script>
+  <script src="js/config.js" defer></script>
+  <script src="js/stats.js" defer></script>
+  <script src="js/db.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>

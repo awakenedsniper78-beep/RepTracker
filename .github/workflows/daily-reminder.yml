@@ -1,0 +1,42 @@
+name: Daily push reminder
+
+on:
+  schedule:
+    # 23:00 UTC = 7 PM EDT / 6 PM EST. GitHub cron is UTC-only and may run
+    # a few minutes (occasionally longer) late. Edit to taste.
+    - cron: '0 23 * * *'
+  workflow_dispatch: {}   # "Run workflow" button for testing
+
+permissions:
+  contents: read
+  actions: write          # lets the keep-alive step re-enable this workflow
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: push
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install web-push
+        working-directory: push
+        run: npm install --no-audit --no-fund
+      - name: Send reminder
+        working-directory: push
+        env:
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
+        run: node send.mjs
+      # GitHub disables scheduled workflows after 60 days without repo activity.
+      # Re-enabling it on every run keeps the reminder alive indefinitely.
+      - name: Keep schedule alive
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable daily-reminder.yml --repo "$GITHUB_REPOSITORY" || true
