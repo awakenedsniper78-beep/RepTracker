@@ -1,0 +1,118 @@
+{
+  "app": "RepTracker",
+  "format": 1,
+  "exportedAt": "2026-09-22T00:00:00.000Z",
+  "exercises": [
+    {
+      "id": "situps",
+      "name": "Sit-ups",
+      "order": 2,
+      "archived": false,
+      "createdAt": 1756252800000
+    }
+  ],
+  "entries": [
+    {
+      "date": "2026-08-27",
+      "exerciseId": "situps",
+      "reps": 25
+    },
+    {
+      "date": "2026-08-28",
+      "exerciseId": "situps",
+      "reps": 33
+    },
+    {
+      "date": "2026-08-29",
+      "exerciseId": "situps",
+      "reps": 41
+    },
+    {
+      "date": "2026-08-30",
+      "exerciseId": "situps",
+      "reps": 46
+    },
+    {
+      "date": "2026-08-31",
+      "exerciseId": "situps",
+      "reps": 47
+    },
+    {
+      "date": "2026-09-01",
+      "exerciseId": "situps",
+      "reps": 49
+    },
+    {
+      "date": "2026-09-02",
+      "exerciseId": "situps",
+      "reps": 50
+    },
+    {
+      "date": "2026-09-03",
+      "exerciseId": "situps",
+      "reps": 50
+    },
+    {
+      "date": "2026-09-06",
+      "exerciseId": "situps",
+      "reps": 47
+    },
+    {
+      "date": "2026-09-07",
+      "exerciseId": "situps",
+      "reps": 51
+    },
+    {
+      "date": "2026-09-08",
+      "exerciseId": "situps",
+      "reps": 56
+    },
+    {
+      "date": "2026-09-09",
+      "exerciseId": "situps",
+      "reps": 51
+    },
+    {
+      "date": "2026-09-12",
+      "exerciseId": "situps",
+      "reps": 46
+    },
+    {
+      "date": "2026-09-13",
+      "exerciseId": "situps",
+      "reps": 51
+    },
+    {
+      "date": "2026-09-14",
+      "exerciseId": "situps",
+      "reps": 54
+    },
+    {
+      "date": "2026-09-15",
+      "exerciseId": "situps",
+      "reps": 54
+    },
+    {
+      "date": "2026-09-16",
+      "exerciseId": "situps",
+      "reps": 51
+    },
+    {
+      "date": "2026-09-18",
+      "exerciseId": "situps",
+      "reps": 50
+    },
+    {
+      "date": "2026-09-20",
+      "exerciseId": "situps",
+      "reps": 53
+    },
+    {
+      "date": "2026-09-21",
+      "exerciseId": "situps",
+      "reps": 54
+    }
+  ],
+  "freezes": [],
+  "settings": {}
+}
