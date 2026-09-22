@@ -40,28 +40,50 @@
     return totals;
   }
 
+  /** Monday of the week containing `key` (weeks run Monday–Sunday). */
+  function weekStart(key) {
+    const dow = (fromKey(key).getDay() + 6) % 7; // Mon=0 … Sun=6
+    return addDays(key, -dow);
+  }
+
   /**
-   * current: consecutive active days ending today — or ending yesterday if
-   *          today isn't logged yet (the streak is still alive until midnight).
-   * longest: longest run of consecutive active days ever.
+   * Streak freezes bridge a gap (the streak survives the frozen day) but a
+   * frozen day doesn't add to the count — only days with reps do.
+   *
+   * current: consecutive covered days ending today — or ending yesterday if
+   *          today isn't covered yet (the streak is still alive until midnight).
+   * longest: most rep-days in any unbroken run of covered days.
    */
-  function streaks(entries, today = todayKey()) {
+  function streaks(entries, freezes = [], today = todayKey()) {
     const active = new Set(dailyTotals(entries).keys());
+    const frozen = new Set(freezes.map((f) => f.date));
+    const covered = (d) => active.has(d) || frozen.has(d);
+
     let current = 0;
-    let cursor = active.has(today) ? today : addDays(today, -1);
-    while (active.has(cursor)) { current++; cursor = addDays(cursor, -1); }
+    let cursor = covered(today) ? today : addDays(today, -1);
+    while (covered(cursor)) {
+      if (active.has(cursor)) current++;
+      cursor = addDays(cursor, -1);
+    }
 
     let longest = 0;
     let run = 0;
     let prev = null;
-    [...active].sort().forEach((d) => {
-      run = prev && addDays(prev, 1) === d ? run + 1 : 1;
+    [...new Set([...active, ...frozen])].sort().forEach((d) => {
+      if (!(prev && addDays(prev, 1) === d)) run = 0;
+      if (active.has(d)) run++;
       if (run > longest) longest = run;
       prev = d;
     });
 
-    return { current, longest, loggedToday: active.has(today), activeDays: active.size };
+    return {
+      current,
+      longest,
+      loggedToday: active.has(today),
+      frozenToday: frozen.has(today),
+      activeDays: active.size,
+    };
   }
 
-  global.RepStats = { toKey, fromKey, todayKey, addDays, daysBetween, dailyTotals, streaks };
+  global.RepStats = { toKey, fromKey, todayKey, addDays, daysBetween, dailyTotals, weekStart, streaks };
 })(typeof self !== 'undefined' ? self : window);

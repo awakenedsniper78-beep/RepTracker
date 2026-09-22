@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  const { todayKey, addDays, fromKey, dailyTotals, streaks } = window.RepStats;
+  const { todayKey, addDays, fromKey, dailyTotals, weekStart, streaks } = window.RepStats;
   const DB = window.RepDB;
   const CONFIG = window.REPTRACKER_CONFIG || {};
 
@@ -29,6 +29,7 @@
     exercises: [],     // active only, ordered
     allExercises: [],  // including archived
     entries: [],       // all entries, cached in memory
+    freezes: [],       // permanent streak freezes { date, reason, createdAt }
     chartSelected: null, // Set of exercise ids
     chartRange: '30',
     chartTrend: false,
@@ -80,19 +81,45 @@
     toast.timer = setTimeout(() => { t.hidden = true; }, action ? 10000 : 2600);
   }
 
-  /** Modal with arbitrary buttons. Resolves with the chosen value (or null). */
-  function ask({ title, body, actions }) {
+  /**
+   * Modal with arbitrary buttons. Resolves with the chosen value (or null).
+   * With `input`, shows a textarea; action buttons stay disabled until it has
+   * at least `input.minLength` characters, and the resolved value is
+   * { value, text }.
+   */
+  function ask({ title, body, actions, input }) {
     const dlg = $('#dialog');
     $('#dialog-title').textContent = title;
     $('#dialog-body').textContent = body || '';
     const box = $('#dialog-actions');
-    box.replaceChildren(...actions.map((a) =>
-      el('button', { class: 'btn ' + (a.cls || ''), value: a.value }, a.label)));
+    const buttons = actions.map((a) => el('button', { class: 'btn ' + (a.cls || ''), value: a.value }, a.label));
+    box.replaceChildren(...buttons);
     box.append(el('button', { class: 'btn secondary', value: '' }, actions.length ? 'Cancel' : 'OK'));
+
+    const ta = $('#dialog-input');
+    const count = $('#dialog-count');
+    ta.hidden = count.hidden = !input;
+    ta.oninput = null;
+    if (input) {
+      ta.value = '';
+      ta.placeholder = input.placeholder || '';
+      ta.maxLength = input.maxLength || 280;
+      const sync = () => {
+        const n = ta.value.trim().length;
+        buttons.forEach((b) => { b.disabled = n < (input.minLength || 1); });
+        count.textContent = `${ta.value.length}/${ta.maxLength}`;
+      };
+      ta.oninput = sync;
+      sync();
+    }
     return new Promise((resolve) => {
-      dlg.addEventListener('close', () => resolve(dlg.returnValue || null), { once: true });
+      dlg.addEventListener('close', () => {
+        const value = dlg.returnValue || null;
+        resolve(input ? (value ? { value, text: ta.value.trim() } : null) : value);
+      }, { once: true });
       dlg.returnValue = '';
       dlg.showModal();
+      if (input) ta.focus();
     });
   }
 
@@ -103,15 +130,17 @@
   /* ================= data loading ================= */
 
   async function loadAll() {
-    const [all, entries, reminderEnabled, reminderTime] = await Promise.all([
+    const [all, entries, freezes, reminderEnabled, reminderTime] = await Promise.all([
       DB.getExercises({ includeArchived: true }),
       DB.getAllEntries(),
+      DB.getFreezes(),
       DB.getMeta('reminderEnabled', true),
       DB.getMeta('reminderTime', '19:00'),
     ]);
     state.allExercises = all;
     state.exercises = all.filter((e) => !e.archived);
     state.entries = entries;
+    state.freezes = freezes;
     state.settings.reminderEnabled = reminderEnabled;
     state.settings.reminderTime = reminderTime;
     if (!state.chartSelected) {
@@ -153,18 +182,23 @@
   /* ================= streak + reminder banner ================= */
 
   function renderStreak() {
-    const s = streaks(state.entries);
+    const s = streaks(state.entries, state.freezes);
     $('#streak-current').textContent = s.current;
     $('#streak-longest').textContent = s.longest;
     $('#streak-card').classList.toggle('cold', s.current === 0);
     let status;
     if (s.current === 0) status = s.activeDays ? 'Log something today to start a new streak' : 'Log something today to start a streak';
+    else if (s.frozenToday && !s.loggedToday) status = 'Today is covered by a streak freeze ❄️';
     else if (s.loggedToday) status = s.current === s.longest && s.current > 1 ? 'Personal best — keep going!' : 'Done for today ✓';
     else status = 'Log today to keep it going';
     $('#streak-status').textContent = status;
+    const used = freezeInWeek(todayKey());
+    $('#streak-freeze').textContent = used
+      ? `❄️ This week's freeze is used (${formatDate(used.date)})`
+      : '❄️ 1 streak freeze available this week';
 
     const banner = $('#reminder-banner');
-    banner.hidden = s.loggedToday || !state.settings.reminderEnabled;
+    banner.hidden = s.loggedToday || s.frozenToday || !state.settings.reminderEnabled;
     $('#reminder-text').textContent = s.current > 0
       ? `Nothing logged today yet — don't lose your ${s.current}-day streak!`
       : 'Nothing logged today yet — start a streak!';
@@ -198,6 +232,82 @@
   function renderDayTotal() {
     const total = state.entries.filter((e) => e.date === state.date).reduce((s, e) => s + e.reps, 0);
     $('#day-total').textContent = total ? `${fmt(total)} total reps` : '';
+    renderFreezeBox(total);
+  }
+
+  /* ================= streak freezes ================= */
+
+  function freezeFor(date) {
+    return state.freezes.find((f) => f.date === date);
+  }
+
+  function freezeInWeek(date) {
+    const wk = weekStart(date);
+    return state.freezes.find((f) => weekStart(f.date) === wk);
+  }
+
+  function weekLabel(date) {
+    const start = weekStart(date);
+    const o = { month: 'short', day: 'numeric' };
+    return `${fromKey(start).toLocaleDateString(undefined, o)}–${fromKey(addDays(start, 6)).toLocaleDateString(undefined, o)}`;
+  }
+
+  function freezeCard(f) {
+    const added = new Date(f.createdAt);
+    return el('div', { class: 'freeze-card' },
+      el('div', { class: 'freeze-card-h' }, '❄️ Streak freeze'),
+      el('p', { class: 'freeze-reason' }, f.reason),
+      el('div', { class: 'freeze-meta' },
+        `Added ${added.toLocaleDateString()} ${added.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} · permanent`));
+  }
+
+  function renderFreezeBox(total) {
+    const box = $('#freeze-box');
+    const f = freezeFor(state.date);
+    if (f) { box.replaceChildren(freezeCard(f)); return; }
+    if (total > 0 || state.exercises.length === 0) { box.replaceChildren(); return; }
+    const used = freezeInWeek(state.date);
+    if (used) {
+      box.replaceChildren(el('div', { class: 'freeze-note' },
+        `❄️ The freeze for ${weekLabel(state.date)} was already used on ${formatDate(used.date)}.`));
+      return;
+    }
+    const label = ['Today', 'Yesterday'].includes(formatDate(state.date))
+      ? formatDate(state.date).toLowerCase() : formatDate(state.date);
+    box.replaceChildren(el('button', { class: 'btn freeze-btn', onclick: () => useFreeze(state.date) },
+      `❄️ Use streak freeze for ${label}`));
+  }
+
+  async function useFreeze(date) {
+    const res = await ask({
+      title: `Freeze ${formatDate(date)}?`,
+      body: `This keeps your streak alive across this day and uses your one freeze for ${weekLabel(date)}. ` +
+        'Write down why. The freeze and its reason are permanent and can\'t be edited or removed.',
+      input: { placeholder: 'Reason (e.g. sick, travelling, sore shoulder)', minLength: 3, maxLength: 280 },
+      actions: [{ label: 'Use freeze permanently', value: 'freeze' }],
+    });
+    if (!res) return;
+    try {
+      await flushSaves();
+      const f = await DB.addFreeze(date, res.text);
+      state.freezes.push(f);
+      renderStreak();
+      renderDayTotal();
+      toast('Streak freeze saved ❄️');
+    } catch (err) {
+      await ask({ title: 'Couldn\'t add freeze', body: err.message, actions: [] });
+    }
+  }
+
+  function renderFreezeList() {
+    const list = $('#freeze-list');
+    if (!state.freezes.length) {
+      list.replaceChildren(el('li', { class: 'fl-empty' }, 'No freezes used yet.'));
+      return;
+    }
+    list.replaceChildren(...[...state.freezes].reverse().map((f) => el('li', {},
+      el('span', { class: 'fl-date' }, formatDate(f.date, { long: true })),
+      el('span', { class: 'fl-reason' }, f.reason))));
   }
 
   function exerciseCard(ex) {
@@ -397,7 +507,7 @@
 
   function renderHistory() {
     const totals = dailyTotals(state.entries);
-    const days = [...totals.keys()].sort().reverse();
+    const days = [...new Set([...totals.keys(), ...state.freezes.map((f) => f.date)])].sort().reverse();
     const list = $('#history');
     if (!days.length) {
       list.replaceChildren(el('li', { class: 'h-empty' }, 'Nothing logged yet.'));
@@ -410,9 +520,13 @@
         .filter((e) => e.date === d)
         .sort((a, b) => exOrder(a.exerciseId) - exOrder(b.exerciseId))
         .map((e) => `${exName(e.exerciseId)} ${fmt(e.reps)}`);
+      const fz = freezeFor(d);
+      const detail = parts.length
+        ? el('span', { class: 'h-detail' }, parts.join(' · '))
+        : el('span', { class: 'h-detail h-freeze' }, '❄️ ' + (fz ? fz.reason : ''));
       return el('li', {}, el('button', {
         onclick: () => { setDate(d); showView('log'); },
-      }, el('span', { class: 'h-date' }, formatDate(d)), el('span', { class: 'h-detail' }, parts.join(' · '))));
+      }, el('span', { class: 'h-date' }, formatDate(d)), detail));
     }));
     $('#history-more').hidden = days.length <= state.historyLimit;
   }
@@ -426,6 +540,7 @@
 
   function renderSettings() {
     renderExerciseEditor();
+    renderFreezeList();
     $('#reminder-enabled').checked = state.settings.reminderEnabled;
     $('#reminder-time').value = state.settings.reminderTime;
     renderNotifStatus();
@@ -574,7 +689,8 @@
       title: 'Import backup?',
       body: `This file has ${data.exercises.length} exercise(s) and ${days} logged day(s)` +
         (data.exportedAt ? `, exported ${new Date(data.exportedAt).toLocaleDateString()}` : '') +
-        '. Merge adds it to what\'s here (the file wins on conflicts). Replace wipes this device first.',
+        '. Merge adds it to what\'s here (the file wins on conflicts). Replace wipes this device\'s reps first.' +
+        ' Streak freezes are permanent either way: existing ones are kept and the file can only add new ones.',
       actions: [
         { label: 'Merge', value: 'merge' },
         { label: 'Replace everything', value: 'replace', cls: 'danger' },
@@ -600,7 +716,7 @@
   async function checkReminder() {
     clearTimeout(reminderTimer);
     const s = renderStreak();
-    if (!state.settings.reminderEnabled || s.loggedToday) return;
+    if (!state.settings.reminderEnabled || s.loggedToday || s.frozenToday) return;
 
     const due = reminderDue();
     const now = new Date();
@@ -618,9 +734,9 @@
         ? `You haven't logged any reps today. Keep your ${s.current}-day streak alive!`
         : 'You haven\'t logged any reps today.';
       if (reg && reg.showNotification) {
-        await reg.showNotification('RepTracker reminder', { body, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', tag: 'daily-reminder' });
+        await reg.showNotification('RepTracker reminder', { body, icon: 'icons/icon-192-v2.png', badge: 'icons/icon-192-v2.png', tag: 'daily-reminder' });
       } else {
-        new Notification('RepTracker reminder', { body, icon: 'icons/icon-192.png' });
+        new Notification('RepTracker reminder', { body, icon: 'icons/icon-192-v2.png' });
       }
       await DB.setMeta('lastNotified', today);
     } catch (err) {

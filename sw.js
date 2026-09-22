@@ -1,7 +1,7 @@
 /* RepTracker service worker: offline app shell + push reminders.
  * Bump VERSION whenever any cached file changes so clients pick up the update.
  */
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const CACHE = 'reptracker-' + VERSION;
 
 const SHELL = [
@@ -14,9 +14,9 @@ const SHELL = [
   'js/db.js',
   'js/app.js',
   'vendor/chart.umd.min.js',
-  'icons/icon-192.png',
-  'icons/icon-512.png',
-  'icons/apple-touch-icon.png',
+  'icons/icon-192-v2.png',
+  'icons/icon-512-v2.png',
+  'icons/apple-touch-icon-v2.png',
   'icons/favicon-32.png',
 ];
 
@@ -68,12 +68,16 @@ self.addEventListener('fetch', (event) => {
 async function buildReminder(payload) {
   // iOS requires every push to show a notification, so we always show one —
   // but tailor it to whether today is already logged.
-  let s = { current: 0, loggedToday: false };
+  let s = { current: 0, loggedToday: false, frozenToday: false };
   try {
-    s = self.RepStats.streaks(await self.RepDB.getAllEntries());
+    const [entries, freezes] = await Promise.all([self.RepDB.getAllEntries(), self.RepDB.getFreezes()]);
+    s = self.RepStats.streaks(entries, freezes);
   } catch (err) { /* DB unavailable: fall back to generic text */ }
 
   const enabled = await self.RepDB.getMeta('reminderEnabled', true).catch(() => true);
+  if (s.frozenToday && !s.loggedToday) {
+    return { title: 'RepTracker', body: 'Today is covered by a streak freeze ❄️ — rest up.', silent: true };
+  }
   if (s.loggedToday) {
     return {
       title: 'RepTracker',
@@ -98,8 +102,8 @@ self.addEventListener('push', (event) => {
     const n = await buildReminder(payload);
     await self.registration.showNotification(n.title, {
       body: n.body,
-      icon: 'icons/icon-192.png',
-      badge: 'icons/icon-192.png',
+      icon: 'icons/icon-192-v2.png',
+      badge: 'icons/icon-192-v2.png',
       tag: 'daily-reminder',
       silent: n.silent,
       data: { url: './?view=log' },

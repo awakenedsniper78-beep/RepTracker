@@ -6,12 +6,14 @@
  *   exercises: { id, name, order, archived, createdAt }
  *   entries:   { id: "YYYY-MM-DD|exerciseId", date, exerciseId, reps }
  *   meta:      { key, value }
+ *   freezes:   { date, reason, createdAt }  — permanent: add-only, never edited or deleted
  */
 (function (global) {
   'use strict';
 
   const DB_NAME = 'reptracker';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
+  const MAX_REASON = 280;
   let dbPromise = null;
 
   function open() {
@@ -30,6 +32,9 @@
         }
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
+        }
+        if (!db.objectStoreNames.contains('freezes')) {
+          db.createObjectStore('freezes', { keyPath: 'date' });
         }
       };
       req.onsuccess = () => {
@@ -142,6 +147,41 @@
       return reps;
     },
 
+    /* ---------- streak freezes (permanent) ---------- */
+    async getFreezes() {
+      const all = await getAll('freezes');
+      return all.sort((a, b) => (a.date < b.date ? -1 : 1));
+    },
+
+    /**
+     * Add a streak freeze. Rules, enforced here so no UI path can skip them:
+     *  - a written reason is required
+     *  - at most one freeze per Monday–Sunday week (by the frozen date)
+     *  - the day must not be in the future and must have no reps logged
+     *  - freezes are permanent: there is deliberately no update/delete API
+     */
+    async addFreeze(date, reason) {
+      const { weekStart, todayKey } = global.RepStats;
+      reason = String(reason || '').trim().slice(0, MAX_REASON);
+      if (reason.length < 3) throw new Error('Write a reason for the freeze (at least a few characters).');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayKey()) throw new Error('You can only freeze today or a past day.');
+      const freeze = { date, reason, createdAt: Date.now() };
+      await tx(['freezes', 'entries'], 'readwrite', async (t) => {
+        const fs = t.objectStore('freezes');
+        const [existing, entries] = await Promise.all([
+          reqToPromise(fs.getAll()),
+          reqToPromise(t.objectStore('entries').index('date').getAll(date)),
+        ]);
+        if (existing.some((f) => f.date === date)) throw new Error('That day is already frozen.');
+        const wk = weekStart(date);
+        const clash = existing.find((f) => weekStart(f.date) === wk);
+        if (clash) throw new Error(`You already used this week's freeze (on ${clash.date}). Only one per week.`);
+        if (entries.some((e) => e.reps > 0)) throw new Error('That day already has reps logged — no freeze needed.');
+        fs.add(freeze); // add, never put: can't overwrite an existing freeze
+      });
+      return freeze;
+    },
+
     /* ---------- meta / settings ---------- */
     async getMeta(key, fallback) {
       const row = await tx(['meta'], 'readonly', (t) => reqToPromise(t.objectStore('meta').get(key)));
@@ -154,8 +194,8 @@
 
     /* ---------- backup ---------- */
     async exportAll() {
-      const [exercises, entries, meta] = await Promise.all([
-        getAll('exercises'), getAll('entries'), getAll('meta'),
+      const [exercises, entries, meta, freezes] = await Promise.all([
+        getAll('exercises'), getAll('entries'), getAll('meta'), getAll('freezes'),
       ]);
       const settings = {};
       meta.forEach((m) => {
@@ -170,6 +210,7 @@
         exportedAt: new Date().toISOString(),
         exercises,
         entries: entries.map(({ date, exerciseId, reps }) => ({ date, exerciseId, reps })),
+        freezes,
         settings,
       };
     },
@@ -191,16 +232,26 @@
           throw new Error('Backup contains an invalid entry');
         }
       });
+      if (data.freezes !== undefined) {
+        if (!Array.isArray(data.freezes)) throw new Error('Backup has invalid freezes');
+        data.freezes.forEach((f) => {
+          if (!f || !dateRe.test(f.date) || typeof f.reason !== 'string') {
+            throw new Error('Backup contains an invalid streak freeze');
+          }
+        });
+      }
       return data;
     },
 
     /**
      * Import a backup. mode "replace" wipes existing data first; mode "merge"
      * keeps existing data and lets the backup's values win on conflicts.
+     * Streak freezes are permanent in both modes: existing ones are never
+     * removed or overwritten; the backup can only add freezes for new days.
      */
     async importAll(data, mode) {
       RepDB.validateBackup(data);
-      await tx(['exercises', 'entries', 'meta'], 'readwrite', (t) => {
+      await tx(['exercises', 'entries', 'meta', 'freezes'], 'readwrite', async (t) => {
         const ex = t.objectStore('exercises');
         const en = t.objectStore('entries');
         const me = t.objectStore('meta');
@@ -220,6 +271,20 @@
           Object.entries(data.settings).forEach(([key, value]) => me.put({ key, value }));
         }
         me.put({ key: 'seeded', value: true });
+
+        const fs = t.objectStore('freezes');
+        const { weekStart } = global.RepStats;
+        const weeks = new Set((await reqToPromise(fs.getAllKeys())).map((d) => weekStart(String(d))));
+        (data.freezes || []).forEach((f) => {
+          // Same one-per-week rule as addFreeze (also covers an existing freeze for that day).
+          if (weeks.has(weekStart(f.date))) return;
+          weeks.add(weekStart(f.date));
+          fs.add({
+            date: f.date,
+            reason: String(f.reason).slice(0, MAX_REASON),
+            createdAt: Number(f.createdAt) || Date.now(),
+          });
+        });
       });
     },
   };

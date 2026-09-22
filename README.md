@@ -11,6 +11,10 @@ no build step, no backend. All data stays on your device in IndexedDB.
 - **Log** screen with a big stepper per exercise (+1 / +5 / +10 / +20)
 - **Any date**: tap the date (or ‹ ›, or swipe) to backfill or edit past days
 - **Streaks**: current and longest run of days with anything logged
+- **Streak freezes**: cover a missed day so the streak survives. One per week
+  (Monday–Sunday, by the frozen day), a written reason is required, and freezes
+  are permanent: no edit or delete, and imports can only add new ones. A frozen
+  day bridges the streak but doesn't add to the count.
 - **Progress** chart per exercise (or several at once), 30D / 90D / 1Y / All, optional 7-day average trend
 - **Custom exercises**: add, rename, reorder, hide (keeps history) or delete
 - **Backup**: export / import a JSON file (merge or replace)
@@ -18,6 +22,9 @@ no build step, no backend. All data stays on your device in IndexedDB.
 - **Reminders**: in-app banner + same-session notification, plus optional daily Web Push
 
 ## Install on iPhone
+
+If you added an earlier version and got a plain letter tile instead of the
+icon, delete that Home Screen icon first, then add it again.
 
 1. Open the live URL in **Safari**.
 2. Tap **Share** → **Add to Home Screen** → **Add**.

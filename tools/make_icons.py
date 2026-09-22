@@ -19,7 +19,7 @@ BARS = [
     (0.63, 0.28, 0.75, 0.74),
 ]
 RADIUS = 0.035
-SS = 4  # supersampling per axis
+SS = 3  # supersampling per axis
 
 
 def in_round_rect(x, y, r):
@@ -65,8 +65,11 @@ def render(size):
 
 if __name__ == "__main__":
     out = os.path.join(os.path.dirname(__file__), "..", "icons")
-    for name, size in [("icon-192.png", 192), ("icon-512.png", 512),
-                       ("apple-touch-icon.png", 180), ("favicon-32.png", 32)]:
+    # File names carry a version so iOS can't reuse a stale cached icon.
+    for name, size in [("icon-192-v2.png", 192), ("icon-512-v2.png", 512),
+                       ("icon-1024-v2.png", 1024), ("apple-touch-icon-v2.png", 180),
+                       ("apple-touch-icon-167-v2.png", 167), ("apple-touch-icon-152-v2.png", 152),
+                       ("favicon-32.png", 32)]:
         with open(os.path.join(out, name), "wb") as f:
             f.write(render(size))
         print("wrote", name)
