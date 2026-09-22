@@ -33,28 +33,7 @@
 
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="locked">
-  <!-- ================= APP LOCK ================= -->
-  <!-- The body starts .locked so nothing else renders until unlocked. -->
-  <div class="lock" id="lock">
-    <div class="lock-card">
-      <img class="lock-logo" src="icons/icon-192-v3.png" alt="" width="76" height="76">
-      <h1 class="lock-title">RepTracker</h1>
-      <p class="lock-sub" id="lock-sub">Loading…</p>
-      <form id="lock-form" autocomplete="on" hidden>
-        <div class="field-group">
-          <input type="text" id="lock-user" name="username" placeholder="Username" autocomplete="username"
-                 autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
-          <input type="password" id="lock-pass" name="password" placeholder="Password" autocomplete="current-password" maxlength="128" required>
-          <input type="password" id="lock-pass2" name="password-confirm" placeholder="Confirm password" autocomplete="new-password" maxlength="128" hidden>
-        </div>
-        <p class="lock-error" id="lock-error" role="alert"></p>
-        <button class="btn-primary block" type="submit" id="lock-submit">Unlock</button>
-      </form>
-      <button class="text-btn" id="lock-forgot" hidden>Forgot password?</button>
-    </div>
-  </div>
-
+<body>
   <main id="main">
     <!-- ================= TODAY ================= -->
     <section id="view-today" class="view active" aria-labelledby="h-today">
@@ -249,22 +228,6 @@
         </div>
       </div>
 
-      <h2 class="group-label">App lock</h2>
-      <div class="group">
-        <div class="row">
-          <span class="row-main"><span class="row-title">Username</span></span>
-          <span class="row-value" id="lock-username"></span>
-        </div>
-        <button class="row nav-row" id="open-account">
-          <span class="row-main"><span class="row-title">Change username or password</span></span>
-          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
-        </button>
-        <button class="row action-row" id="lock-now">
-          <span class="row-main"><span class="row-title accent">Lock now</span></span>
-        </button>
-      </div>
-      <p class="footnote">RepTracker locks every time it opens and after a minute in the background.</p>
-
       <h2 class="group-label">Backup</h2>
       <div class="group">
         <button class="row icon-row" id="export-btn">
@@ -310,29 +273,6 @@
       <p class="footnote">Push-ups and pull-ups are there to start. Removing an exercise lets you hide it (keeps its history) or delete it along with its history.</p>
     </section>
 
-    <!-- ================= SETTINGS › ACCOUNT ================= -->
-    <section id="view-account" class="view grouped" aria-labelledby="h-account">
-      <button class="back-btn" data-back="settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Settings
-      </button>
-      <header class="page-head">
-        <div>
-          <h1 class="large-title" id="h-account">App lock</h1>
-          <p class="page-sub">Change the username or password you use to open RepTracker.</p>
-        </div>
-      </header>
-      <form id="change-auth-form" autocomplete="on">
-        <div class="group field-group">
-          <input type="text" id="ca-user" name="username" placeholder="Username" autocomplete="username"
-                 autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
-          <input type="password" id="ca-current" placeholder="Current password" autocomplete="current-password" maxlength="128" required>
-          <input type="password" id="ca-new" placeholder="New password (leave blank to keep)" autocomplete="new-password" maxlength="128">
-          <input type="password" id="ca-new2" placeholder="Confirm new password" autocomplete="new-password" maxlength="128">
-        </div>
-        <button class="btn-primary block" type="submit">Save</button>
-      </form>
-      <p class="footnote">If you forget the password, the only way back in is to erase this device's RepTracker data, so export a backup now and then.</p>
-    </section>
   </main>
 
   <nav class="tabbar" role="tablist">

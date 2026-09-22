@@ -15,7 +15,7 @@
   const DB_VERSION = 2;
   const MAX_REASON = 280;
   // Meta keys that belong to this device only: never exported, never imported.
-  // (Importing `auth` would let a crafted backup replace the app-lock password.)
+  // (`auth`/`authFails` belonged to the old password lock and are never imported.)
   const DEVICE_KEYS = ['seeded', 'lastNotified', 'lastBackup', 'pushSubscription', 'auth', 'authFails'];
   let dbPromise = null;
 
@@ -83,20 +83,6 @@
   const RepDB = {
     open,
     uid,
-
-    /** Close and permanently delete the whole database (used by "forgot password"). */
-    async eraseEverything() {
-      if (dbPromise) {
-        try { (await dbPromise).close(); } catch (_) { /* ignore */ }
-        dbPromise = null;
-      }
-      await new Promise((resolve, reject) => {
-        const req = indexedDB.deleteDatabase(DB_NAME);
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-        req.onblocked = () => resolve(); // other connections close via onversionchange
-      });
-    },
 
     /* ---------- exercises ---------- */
     async getExercises({ includeArchived = false } = {}) {
@@ -207,6 +193,10 @@
 
     async setMeta(key, value) {
       await tx(['meta'], 'readwrite', (t) => { t.objectStore('meta').put({ key, value }); });
+    },
+
+    async deleteMeta(key) {
+      await tx(['meta'], 'readwrite', (t) => { t.objectStore('meta').delete(key); });
     },
 
     /* ---------- backup ---------- */
