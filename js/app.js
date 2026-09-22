@@ -210,11 +210,58 @@
   function renderDateBar() {
     const today = todayKey();
     $('#date-label').textContent = formatDate(state.date);
-    const input = $('#date-input');
-    input.value = state.date;
-    input.max = today;
     $('#next-day').disabled = state.date >= today;
     $('#jump-today').hidden = state.date === today;
+  }
+
+  /* ================= calendar picker ================= */
+
+  let calMonth = null; // "YYYY-MM-01" of the month being shown
+
+  function openCalendar() {
+    calMonth = state.date.slice(0, 8) + '01';
+    renderCalendar();
+    $('#cal-dialog').showModal();
+  }
+
+  function shiftCalMonth(n) {
+    const d = fromKey(calMonth);
+    d.setMonth(d.getMonth() + n);
+    const next = window.RepStats.toKey(d);
+    if (next > todayKey()) return; // no browsing into future months
+    calMonth = next;
+    renderCalendar();
+  }
+
+  function renderCalendar() {
+    const today = todayKey();
+    const first = fromKey(calMonth);
+    $('#cal-title').textContent = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    $('#cal-next').disabled = calMonth === today.slice(0, 8) + '01';
+
+    const withReps = new Set(dailyTotals(state.entries).keys());
+    const frozen = new Set(state.freezes.map((f) => f.date));
+    const lead = (first.getDay() + 6) % 7; // Monday-first, matching freeze weeks
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+
+    const cells = [];
+    for (let i = 0; i < lead; i++) cells.push(el('span'));
+    for (let day = 1; day <= daysInMonth; day++) {
+      const key = addDays(calMonth, day - 1);
+      const cls = ['cal-day'];
+      if (withReps.has(key)) cls.push('has-reps');
+      if (frozen.has(key)) cls.push('frozen');
+      if (key === today) cls.push('today');
+      if (key === state.date) cls.push('selected');
+      const label = fromKey(key).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) +
+        (withReps.has(key) ? ', reps logged' : '') + (frozen.has(key) ? ', streak freeze' : '');
+      cells.push(el('button', {
+        class: cls.join(' '), disabled: key > today, 'aria-label': label,
+        'aria-current': key === state.date ? 'date' : false,
+        onclick: () => { setDate(key); $('#cal-dialog').close(); },
+      }, String(day)));
+    }
+    $('#cal-grid').replaceChildren(...cells);
   }
 
   function renderLog() {
@@ -896,7 +943,22 @@
     $('#prev-day').addEventListener('click', () => setDate(addDays(state.date, -1)));
     $('#next-day').addEventListener('click', () => setDate(addDays(state.date, 1)));
     $('#jump-today').addEventListener('click', () => setDate(todayKey()));
-    $('#date-input').addEventListener('change', (e) => { if (e.target.value) setDate(e.target.value); });
+    $('#date-btn').addEventListener('click', openCalendar);
+    $('#cal-prev').addEventListener('click', () => shiftCalMonth(-1));
+    $('#cal-next').addEventListener('click', () => shiftCalMonth(1));
+    $('#cal-today').addEventListener('click', () => { setDate(todayKey()); $('#cal-dialog').close(); });
+    $('#cal-close').addEventListener('click', () => $('#cal-dialog').close());
+    // Tap outside the calendar to dismiss it.
+    $('#cal-dialog').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+    // Swipe left/right inside the calendar to change month.
+    let cx = null;
+    $('#cal-grid').addEventListener('touchstart', (e) => { cx = e.touches[0].clientX; }, { passive: true });
+    $('#cal-grid').addEventListener('touchend', (e) => {
+      if (cx == null) return;
+      const dx = e.changedTouches[0].clientX - cx;
+      cx = null;
+      if (Math.abs(dx) > 60) shiftCalMonth(dx > 0 ? -1 : 1);
+    }, { passive: true });
 
     // Swipe left/right on the log view to change day.
     let sx = null, sy = null;

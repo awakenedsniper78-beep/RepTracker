@@ -51,10 +51,10 @@
 
       <div class="datebar">
         <button class="icon-btn" id="prev-day" aria-label="Previous day">‹</button>
-        <label class="date-picker">
+        <button class="date-picker" id="date-btn" aria-haspopup="dialog" aria-label="Choose date from calendar">
+          <svg class="cal-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
           <span id="date-label">Today</span>
-          <input type="date" id="date-input" aria-label="Choose date">
-        </label>
+        </button>
         <button class="icon-btn" id="next-day" aria-label="Next day">›</button>
       </div>
       <button class="link-btn" id="jump-today" hidden>Jump to today</button>
@@ -166,6 +166,26 @@
   </nav>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="cal-dialog" class="cal-dialog" aria-label="Choose a date">
+    <div class="cal-head">
+      <button class="icon-btn" id="cal-prev" aria-label="Previous month">‹</button>
+      <div class="cal-title" id="cal-title" aria-live="polite"></div>
+      <button class="icon-btn" id="cal-next" aria-label="Next month">›</button>
+    </div>
+    <div class="cal-weekdays" aria-hidden="true">
+      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
+    </div>
+    <div class="cal-grid" id="cal-grid" role="grid"></div>
+    <div class="cal-legend" aria-hidden="true">
+      <span><i class="lg-dot"></i> reps logged</span>
+      <span>❄️ freeze</span>
+    </div>
+    <div class="cal-actions">
+      <button class="btn secondary" id="cal-today">Today</button>
+      <button class="btn secondary" id="cal-close">Close</button>
+    </div>
+  </dialog>
 
   <dialog id="dialog">
     <form method="dialog">
