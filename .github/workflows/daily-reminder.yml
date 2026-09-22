@@ -2,19 +2,35 @@ name: Daily push reminder
 
 on:
   schedule:
-    # 23:00 UTC = 7 PM EDT / 6 PM EST. GitHub cron is UTC-only and may run
-    # a few minutes (occasionally longer) late. Edit to taste.
-    - cron: '0 23 * * *'
-  workflow_dispatch: {}   # "Run workflow" button for testing
+    # Checks every 15 minutes; send.mjs only sends when a subscriber's chosen
+    # local time (from their setup code) has arrived, once per day.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Send to every subscription right now (for testing)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  actions: write          # lets the keep-alive step re-enable this workflow
+  actions: write          # cache save + the keep-alive step
+
+concurrency:
+  group: daily-reminder
+  cancel-in-progress: false
 
 jobs:
   send:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+      VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+      VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+      PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
+      FORCE: ${{ inputs.force && 'true' || 'false' }}
+      STATE_FILE: ${{ github.workspace }}/push-state.json
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,17 +38,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # Remembers which subscriptions were already sent to today.
+      - name: Restore sent-today state
+        uses: actions/cache/restore@v4
+        with:
+          path: push-state.json
+          key: push-state-${{ github.run_id }}
+          restore-keys: push-state-
+      - name: Anything due?
+        id: check
+        working-directory: push
+        run: node send.mjs --check
       - name: Install web-push
+        if: steps.check.outputs.due == 'true'
         working-directory: push
         run: npm install --no-audit --no-fund
       - name: Send reminder
+        if: steps.check.outputs.due == 'true'
         working-directory: push
-        env:
-          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
-          PUSH_SUBSCRIPTIONS: ${{ secrets.PUSH_SUBSCRIPTIONS }}
         run: node send.mjs
+      - name: Save sent-today state
+        if: steps.check.outputs.due == 'true' && always()
+        uses: actions/cache/save@v4
+        with:
+          path: push-state.json
+          key: push-state-${{ github.run_id }}
       # GitHub disables scheduled workflows after 60 days without repo activity.
       # Re-enabling it on every run keeps the reminder alive indefinitely.
       - name: Keep schedule alive

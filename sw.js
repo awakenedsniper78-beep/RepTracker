@@ -1,7 +1,7 @@
 /* RepTracker service worker: offline app shell + push reminders.
  * Bump VERSION whenever any cached file changes so clients pick up the update.
  */
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const CACHE = 'reptracker-' + VERSION;
 
 const SHELL = [
@@ -14,10 +14,10 @@ const SHELL = [
   'js/db.js',
   'js/app.js',
   'vendor/chart.umd.min.js',
-  'icons/icon-192-v2.png',
-  'icons/icon-512-v2.png',
-  'icons/apple-touch-icon-v2.png',
-  'icons/favicon-32.png',
+  'icons/icon-192-v3.png',
+  'icons/icon-512-v3.png',
+  'icons/apple-touch-icon-v3.png',
+  'icons/favicon-32-v3.png',
 ];
 
 importScripts('js/stats.js', 'js/db.js');
@@ -102,11 +102,11 @@ self.addEventListener('push', (event) => {
     const n = await buildReminder(payload);
     await self.registration.showNotification(n.title, {
       body: n.body,
-      icon: 'icons/icon-192-v2.png',
-      badge: 'icons/icon-192-v2.png',
+      icon: 'icons/icon-192-v3.png',
+      badge: 'icons/icon-192-v3.png',
       tag: 'daily-reminder',
       silent: n.silent,
-      data: { url: './?view=log' },
+      data: { url: './?view=today' },
     });
   })());
 });

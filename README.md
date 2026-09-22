@@ -8,15 +8,17 @@ no build step, no backend. All data stays on your device in IndexedDB.
 
 ## Features
 
-- **Log** screen with a big stepper per exercise (+1 / +5 / +10 / +20)
-- **Any date**: tap the date (or ‹ ›, or swipe) to backfill or edit past days
-- **Streaks**: current and longest run of days with anything logged
+- **Today**: a card per exercise with − / + and +5 / +10 / +25, your best and
+  yesterday's count, a reminder card, and current / longest streak rings
+- **History**: a month calendar (dots on logged days); pick any day to add or fix its reps
+- **Progress**: reps-per-day chart (30D / 90D / 1Y); tap an exercise to show or hide
+  its line (solid / dashed / dotted), plus Best, Average and Change for the range
 - **Streak freezes**: cover a missed day so the streak survives. One per week
   (Monday–Sunday, by the frozen day), a written reason is required, and freezes
   are permanent: no edit or delete, and imports can only add new ones. A frozen
   day bridges the streak but doesn't add to the count.
-- **Progress** chart per exercise (or several at once), 30D / 90D / 1Y / All, optional 7-day average trend
-- **Custom exercises**: add, rename, reorder, hide (keeps history) or delete
+- **Dark mode**: Settings › Appearance › System / Light / Dark
+- **Custom exercises**: add, rename, hide (keeps history) or delete
 - **Backup**: export / import a JSON file (merge or replace)
 - **App lock**: a username and password (set on first launch) are required every
   time the app opens and after a minute in the background. It's a local lock, not
@@ -25,7 +27,7 @@ no build step, no backend. All data stays on your device in IndexedDB.
   erasing the device's data (so keep a backup). The lock is never exported, and
   imports can't change it.
 - **Offline**: a service worker caches the whole app; Chart.js is bundled in `vendor/`
-- **Reminders**: in-app banner + same-session notification, plus optional daily Web Push
+- **Reminders**: an in-app reminder when nothing's logged, plus an optional daily push at your chosen time
 
 ## Install on iPhone
 
@@ -45,10 +47,11 @@ Replace wipes it first).
 
 ## Optional: daily push reminder (even when the app is closed)
 
-A static site can't schedule notifications by itself, so a GitHub Actions cron
-job (`.github/workflows/daily-reminder.yml`) sends a Web Push every day at
-**23:00 UTC (7 PM EDT / 6 PM EST)**. The app's service worker then shows either
-"time to log your reps" or "nice, today is logged" depending on your data.
+A static site can't schedule notifications by itself, so a GitHub Actions job
+(`.github/workflows/daily-reminder.yml`) checks every 15 minutes and sends a Web
+Push once a day when your chosen time arrives in your time zone. The app's
+service worker then shows "time to log your reps", "nice, today is logged" or
+"today is frozen" depending on your data.
 
 Requirements: iOS 16.4+, and the app opened from the Home Screen icon.
 
@@ -56,16 +59,19 @@ One-time setup:
 
 1. The repo already has the `VAPID_PRIVATE_KEY` secret and the `VAPID_PUBLIC_KEY`
    / `VAPID_SUBJECT` variables configured.
-2. On your iPhone, open RepTracker from the Home Screen → **Settings** →
-   **Enable push reminders** → allow notifications.
-3. Tap **Copy**, then **Open repo secrets** (sign in to GitHub) → **New repository
-   secret** → name `PUSH_SUBSCRIPTIONS`, paste, save. (For several devices, paste a
-   JSON array of subscriptions.)
-4. Test it: repo → **Actions** → **Daily push reminder** → **Run workflow**.
+2. On your iPhone, open RepTracker from the Home Screen → **Settings** → set the
+   **Time** → turn on **Daily reminder** → allow notifications.
+3. Tap **Copy setup code**, then **Open GitHub repo secrets** (sign in) →
+   **New repository secret** (or edit the existing one) → name `PUSH_SUBSCRIPTIONS`,
+   paste, save. For several devices, paste a JSON array of setup codes.
+4. Test it: repo → **Actions** → **Daily push reminder** → **Run workflow** → tick
+   **Send to every subscription right now**.
 
-To change the time, edit the `cron:` line (it's in UTC). GitHub may start
-scheduled runs a few minutes late. The workflow re-enables itself each run so
-GitHub doesn't pause it after 60 days of repo inactivity.
+The setup code carries the time and time zone, so **after changing the time,
+copy the code again and update the secret** (the app reminds you). GitHub can
+start scheduled runs late, so a reminder may arrive up to ~15 minutes after the
+time (a skipped run is caught up within 3 hours). The workflow re-enables itself
+each run so GitHub doesn't pause it after 60 days of repo inactivity.
 
 ### Using your own keys (forks)
 

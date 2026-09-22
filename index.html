@@ -6,219 +6,355 @@
   <title>RepTracker</title>
   <meta name="description" content="Log daily push-ups, pull-ups and other bodyweight reps. Works offline.">
 
+  <!-- Apply the saved Light/Dark choice before first paint (no flash). -->
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('rt-theme'); } catch (e) {}
+      var dark = t === 'dark' || (t !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      document.write('<meta name="apple-mobile-web-app-status-bar-style" content="' + (dark ? 'black' : 'default') + '">');
+    })();
+  </script>
+
   <!-- PWA / iOS home-screen install -->
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="RepTracker">
   <meta name="format-detection" content="telephone=no">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-v2.png">
-  <link rel="apple-touch-icon" sizes="167x167" href="icons/apple-touch-icon-167-v2.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="icons/apple-touch-icon-152-v2.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon-v3.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="icons/apple-touch-icon-167-v3.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="icons/apple-touch-icon-152-v3.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32-v3.png">
 
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="locked">
-  <!-- App lock. The body starts .locked so nothing else renders until unlocked. -->
+  <!-- ================= APP LOCK ================= -->
+  <!-- The body starts .locked so nothing else renders until unlocked. -->
   <div class="lock" id="lock">
     <div class="lock-card">
-      <img class="lock-logo" src="icons/icon-192-v2.png" alt="" width="72" height="72">
+      <img class="lock-logo" src="icons/icon-192-v3.png" alt="" width="76" height="76">
       <h1 class="lock-title">RepTracker</h1>
       <p class="lock-sub" id="lock-sub">Loading…</p>
       <form id="lock-form" autocomplete="on" hidden>
-        <input type="text" id="lock-user" name="username" placeholder="Username" autocomplete="username"
-               autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
-        <input type="password" id="lock-pass" name="password" placeholder="Password" autocomplete="current-password" maxlength="128" required>
-        <input type="password" id="lock-pass2" name="password-confirm" placeholder="Confirm password" autocomplete="new-password" maxlength="128" hidden>
+        <div class="field-group">
+          <input type="text" id="lock-user" name="username" placeholder="Username" autocomplete="username"
+                 autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
+          <input type="password" id="lock-pass" name="password" placeholder="Password" autocomplete="current-password" maxlength="128" required>
+          <input type="password" id="lock-pass2" name="password-confirm" placeholder="Confirm password" autocomplete="new-password" maxlength="128" hidden>
+        </div>
         <p class="lock-error" id="lock-error" role="alert"></p>
-        <button class="btn block" type="submit" id="lock-submit">Unlock</button>
+        <button class="btn-primary block" type="submit" id="lock-submit">Unlock</button>
       </form>
-      <button class="link-btn" id="lock-forgot" hidden>Forgot password?</button>
+      <button class="text-btn" id="lock-forgot" hidden>Forgot password?</button>
     </div>
   </div>
 
-  <header class="topbar">
-    <h1 id="screen-title">RepTracker</h1>
-  </header>
-
   <main id="main">
-    <!-- ================= LOG ================= -->
-    <section id="view-log" class="view active" aria-labelledby="tab-log">
-      <div class="streak-card" id="streak-card">
-        <div class="streak-main">
-          <div class="streak-flame" aria-hidden="true">🔥</div>
+    <!-- ================= TODAY ================= -->
+    <section id="view-today" class="view active" aria-labelledby="h-today">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow" id="today-date"></div>
+          <h1 class="large-title" id="h-today">Today</h1>
+        </div>
+        <button class="round-btn" id="today-cal" aria-label="Open history calendar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+        </button>
+      </header>
+
+      <div class="notice" id="today-notice" hidden>
+        <div class="notice-icon" id="notice-icon" aria-hidden="true"></div>
+        <div class="notice-text">
+          <div class="notice-title" id="notice-title"></div>
+          <div class="notice-body" id="notice-body"></div>
+          <button class="text-btn inline" id="notice-freeze" hidden>Use a streak freeze instead</button>
+        </div>
+      </div>
+
+      <div class="streaks">
+        <div class="streak-tile">
+          <svg class="ring" viewBox="0 0 48 48" aria-hidden="true">
+            <circle class="ring-track" cx="24" cy="24" r="20"/>
+            <circle class="ring-fill" id="ring-current" cx="24" cy="24" r="20"/>
+            <path class="ring-icon" d="M24 15c1.2 3.6 5.4 5.4 5.4 10.2A5.4 5.4 0 0 1 24 30.6a5.4 5.4 0 0 1-5.4-5.4c0-2.2 1.2-3.7 2.4-4.8.2 1.8 1 2.9 2 3.4-.6-3.1.1-6.1 1-8.8z"/>
+          </svg>
           <div>
-            <div class="streak-num"><span id="streak-current">0</span><span class="streak-unit"> day streak</span></div>
-            <div class="streak-sub" id="streak-status">Log something today to start a streak</div>
-            <div class="streak-freeze" id="streak-freeze"></div>
+            <div class="streak-label">Current<br>streak</div>
+            <div class="streak-value" id="streak-current">0 days</div>
           </div>
         </div>
-        <div class="streak-best">
-          <div class="streak-best-num" id="streak-longest">0</div>
-          <div class="streak-best-label">best</div>
+        <div class="streak-tile">
+          <svg class="ring" viewBox="0 0 48 48" aria-hidden="true">
+            <circle class="ring-track" cx="24" cy="24" r="20"/>
+            <circle class="ring-fill" id="ring-longest" cx="24" cy="24" r="20"/>
+            <path class="ring-icon" d="M24 16.2l2.3 4.8 5.2.7-3.8 3.6.9 5.2L24 28l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z"/>
+          </svg>
+          <div>
+            <div class="streak-label">Longest<br>streak</div>
+            <div class="streak-value" id="streak-longest">0 days</div>
+          </div>
         </div>
       </div>
+      <p class="footnote center" id="freeze-status"></p>
 
-      <div class="banner" id="reminder-banner" hidden>
-        <span aria-hidden="true">⏰</span>
-        <span id="reminder-text">Nothing logged today yet — keep the streak alive!</span>
+      <div class="section-row">
+        <h2 class="section-title">Exercises</h2>
+        <button class="text-btn" id="today-edit">Edit</button>
+      </div>
+      <div class="ex-list" id="today-list"></div>
+    </section>
+
+    <!-- ================= HISTORY ================= -->
+    <section id="view-history" class="view" aria-labelledby="h-history">
+      <header class="page-head">
+        <div>
+          <h1 class="large-title" id="h-history">History</h1>
+          <p class="page-sub">Pick any day to add or fix its reps.</p>
+        </div>
+      </header>
+
+      <div class="cal-card">
+        <div class="cal-head">
+          <button class="cal-nav" id="cal-prev" aria-label="Previous month">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <div class="cal-title" id="cal-title" aria-live="polite"></div>
+          <button class="cal-nav" id="cal-next" aria-label="Next month">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </button>
+        </div>
+        <div class="cal-weekdays" aria-hidden="true">
+          <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
       </div>
 
-      <div class="datebar">
-        <button class="icon-btn" id="prev-day" aria-label="Previous day">‹</button>
-        <button class="date-picker" id="date-btn" aria-haspopup="dialog" aria-label="Choose date from calendar">
-          <svg class="cal-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-          <span id="date-label">Today</span>
-        </button>
-        <button class="icon-btn" id="next-day" aria-label="Next day">›</button>
+      <div class="day-card" id="day-card">
+        <div class="day-head">
+          <div class="day-title" id="day-title"></div>
+          <span class="pill" id="day-pill"></span>
+        </div>
+        <div class="day-sub" id="day-sub"></div>
+        <div class="day-rows" id="day-rows"></div>
+        <div id="day-freeze"></div>
       </div>
-      <button class="link-btn" id="jump-today" hidden>Jump to today</button>
-
-      <div id="exercise-list" class="exercise-list"></div>
-
-      <div class="day-total" id="day-total"></div>
-      <div id="freeze-box"></div>
     </section>
 
     <!-- ================= PROGRESS ================= -->
-    <section id="view-progress" class="view" aria-labelledby="tab-progress">
-      <div class="chips" id="chart-exercises" role="group" aria-label="Exercises to show"></div>
-      <div class="segmented" id="chart-range" role="group" aria-label="Time range">
-        <button data-range="30" class="active">30D</button>
-        <button data-range="90">90D</button>
-        <button data-range="365">1Y</button>
-        <button data-range="all">All</button>
-      </div>
-      <label class="toggle-row small">
-        <input type="checkbox" id="chart-trend">
-        <span>Show 7-day average trend</span>
-      </label>
-      <div class="chart-wrap">
-        <canvas id="chart" aria-label="Reps over time"></canvas>
-        <div class="chart-empty" id="chart-empty" hidden>No reps logged in this range yet.</div>
-      </div>
-      <div class="stats-grid" id="stats-grid"></div>
+    <section id="view-progress" class="view" aria-labelledby="h-progress">
+      <header class="page-head">
+        <div>
+          <h1 class="large-title" id="h-progress">Progress</h1>
+          <p class="page-sub">Tap an exercise to show or hide its line.</p>
+        </div>
+      </header>
 
-      <h2 class="section-h">History</h2>
-      <ul class="history" id="history"></ul>
-      <button class="btn secondary block" id="history-more" hidden>Show more</button>
+      <div class="legend-chips" id="chart-exercises" role="group" aria-label="Exercises to show"></div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h2 class="chart-title">Reps per day</h2>
+          <div class="segmented" id="chart-range" role="group" aria-label="Time range">
+            <button data-range="30" class="active">30D</button>
+            <button data-range="90">90D</button>
+            <button data-range="365">1Y</button>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="chart" aria-label="Reps per day chart"></canvas>
+          <div class="chart-empty" id="chart-empty" hidden></div>
+        </div>
+      </div>
+
+      <div id="stats-block">
+        <h2 class="section-title" id="stats-title"></h2>
+        <div class="stat-row">
+          <div class="stat"><div class="stat-label">Best</div><div class="stat-value" id="stat-best">–</div></div>
+          <div class="stat"><div class="stat-label">Average</div><div class="stat-value" id="stat-avg">–</div></div>
+          <div class="stat"><div class="stat-label">Change</div><div class="stat-value accent" id="stat-change">–</div></div>
+        </div>
+        <p class="footnote">Daily totals. Change compares the second half of the range with the first.</p>
+      </div>
     </section>
 
     <!-- ================= SETTINGS ================= -->
-    <section id="view-settings" class="view" aria-labelledby="tab-settings">
-      <h2 class="section-h">Exercises</h2>
-      <ul class="ex-edit-list" id="ex-edit-list"></ul>
-      <form class="add-row" id="add-exercise-form">
-        <input type="text" id="new-exercise" placeholder="Add exercise (e.g. Squats)" maxlength="60" autocomplete="off">
-        <button class="btn" type="submit">Add</button>
-      </form>
+    <section id="view-settings" class="view grouped" aria-labelledby="h-settings">
+      <header class="page-head">
+        <h1 class="large-title" id="h-settings">Settings</h1>
+      </header>
 
-      <h2 class="section-h">Streak freezes</h2>
-      <div class="card">
-        <p class="hint">A freeze covers a day with no reps so your streak survives it. One per week (Monday–Sunday), a written reason is required, and freezes are permanent: they can't be edited or removed. Use one from the Log screen on the day you missed.</p>
-        <ul class="freeze-list" id="freeze-list"></ul>
+      <h2 class="group-label">Exercises</h2>
+      <div class="group">
+        <button class="row nav-row" id="open-exercises">
+          <span class="row-main"><span class="row-title">Manage exercises</span></span>
+          <span class="row-value" id="exercise-count">0</span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
       </div>
 
-      <h2 class="section-h">Reminders</h2>
-      <div class="card">
-        <label class="toggle-row">
-          <input type="checkbox" id="reminder-enabled">
-          <span>Remind me when nothing is logged</span>
+      <h2 class="group-label">Reminders</h2>
+      <div class="group">
+        <label class="row">
+          <span class="row-main">
+            <span class="row-title">When I open the app</span>
+            <span class="row-sub">If nothing's logged yet today</span>
+          </span>
+          <input type="checkbox" class="switch" id="reminder-enabled">
         </label>
-        <label class="field-row">
-          <span>Reminder time</span>
-          <input type="time" id="reminder-time" value="19:00">
+        <label class="row">
+          <span class="row-main">
+            <span class="row-title">Daily reminder</span>
+            <span class="row-sub">Even when RepTracker is closed</span>
+          </span>
+          <input type="checkbox" class="switch" id="push-enabled">
         </label>
-        <p class="hint">While the app is open (or when you open it after this time), you'll get a reminder if today is empty.</p>
-        <button class="btn secondary block" id="notif-permission">Allow notifications</button>
-        <p class="hint" id="notif-status"></p>
-      </div>
-
-      <div class="card">
-        <h3 class="card-h">Daily push reminder <span class="tag">optional</span></h3>
-        <p class="hint">Sends a real notification at a fixed time even when the app is closed. Needs iOS 16.4+, the app installed to your Home Screen, and a one-time setup (see the README).</p>
-        <button class="btn secondary block" id="push-subscribe">Enable push reminders</button>
-        <div id="push-details" hidden>
-          <p class="hint">Copy this subscription and save it as the <code>PUSH_SUBSCRIPTIONS</code> secret in the GitHub repo:</p>
-          <textarea id="push-sub-json" readonly rows="5"></textarea>
-          <div class="btn-row">
-            <button class="btn" id="push-copy">Copy</button>
-            <a class="btn secondary" id="push-secrets-link" target="_blank" rel="noopener">Open repo secrets</a>
-          </div>
-          <button class="link-btn danger" id="push-unsubscribe">Turn off push reminders</button>
+        <label class="row">
+          <span class="row-main"><span class="row-title">Time</span></span>
+          <input type="time" class="time-pill" id="reminder-time" value="19:00" aria-label="Reminder time">
+        </label>
+        <div id="push-setup" hidden>
+          <button class="row action-row" id="push-copy">
+            <span class="row-main">
+              <span class="row-title accent">Copy setup code</span>
+              <span class="row-sub" id="push-copy-sub">Paste it into the PUSH_SUBSCRIPTIONS repo secret</span>
+            </span>
+          </button>
+          <a class="row action-row" id="push-secrets-link" target="_blank" rel="noopener">
+            <span class="row-main"><span class="row-title accent">Open GitHub repo secrets</span></span>
+            <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+          </a>
         </div>
-        <p class="hint" id="push-status"></p>
+      </div>
+      <p class="footnote" id="reminder-foot">Daily reminders need iOS 16.4 or later, RepTracker on your Home Screen, and notifications allowed.</p>
+
+      <h2 class="group-label">Streak freezes</h2>
+      <div class="group" id="freeze-list"></div>
+      <p class="footnote">A freeze covers a day with no reps so your streak survives it. One per week (Monday–Sunday), you have to write down why, and it's permanent. Use one from History on the day you missed.</p>
+
+      <h2 class="group-label">Appearance</h2>
+      <div class="group">
+        <div class="row">
+          <span class="row-main"><span class="row-title">Theme</span></span>
+          <div class="segmented small" id="theme-seg" role="group" aria-label="Theme">
+            <button data-theme-choice="system">System</button>
+            <button data-theme-choice="light">Light</button>
+            <button data-theme-choice="dark">Dark</button>
+          </div>
+        </div>
       </div>
 
-      <h2 class="section-h">App lock</h2>
-      <div class="card">
-        <p class="hint" id="lock-status"></p>
-        <form class="stack" id="change-auth-form" autocomplete="on">
+      <h2 class="group-label">App lock</h2>
+      <div class="group">
+        <div class="row">
+          <span class="row-main"><span class="row-title">Username</span></span>
+          <span class="row-value" id="lock-username"></span>
+        </div>
+        <button class="row nav-row" id="open-account">
+          <span class="row-main"><span class="row-title">Change username or password</span></span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+        <button class="row action-row" id="lock-now">
+          <span class="row-main"><span class="row-title accent">Lock now</span></span>
+        </button>
+      </div>
+      <p class="footnote">RepTracker locks every time it opens and after a minute in the background.</p>
+
+      <h2 class="group-label">Backup</h2>
+      <div class="group">
+        <button class="row icon-row" id="export-btn">
+          <span class="row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v11M7 11l5 5 5-5M6 19h12"/></svg></span>
+          <span class="row-main">
+            <span class="row-title accent">Export data</span>
+            <span class="row-sub">Saves a JSON file of everything</span>
+          </span>
+        </button>
+        <button class="row icon-row" id="import-btn">
+          <span class="row-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 19V8M7 12l5-5 5 5M6 5h12"/></svg></span>
+          <span class="row-main">
+            <span class="row-title accent">Import data</span>
+            <span class="row-sub">Restores from a backup file</span>
+          </span>
+        </button>
+      </div>
+      <p class="footnote" id="backup-status"></p>
+      <input type="file" id="import-file" accept="application/json,.json" hidden>
+
+      <p class="footnote center version" id="app-version"></p>
+    </section>
+
+    <!-- ================= SETTINGS › EXERCISES ================= -->
+    <section id="view-exercises" class="view grouped" aria-labelledby="h-exercises">
+      <button class="back-btn" data-back="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Settings
+      </button>
+      <header class="page-head">
+        <div>
+          <h1 class="large-title" id="h-exercises">Exercises</h1>
+          <p class="page-sub">Tap a name to rename it.</p>
+        </div>
+      </header>
+      <div class="group" id="ex-edit-list"></div>
+      <div id="hidden-exercises"></div>
+
+      <h2 class="group-label">Add an exercise</h2>
+      <form class="add-row" id="add-exercise-form">
+        <input type="text" id="new-exercise" placeholder="e.g. Squats" maxlength="60" autocomplete="off" aria-label="New exercise name">
+        <button class="btn-primary" type="submit" id="add-exercise-btn" disabled>Add</button>
+      </form>
+      <p class="footnote">Push-ups and pull-ups are there to start. Removing an exercise lets you hide it (keeps its history) or delete it along with its history.</p>
+    </section>
+
+    <!-- ================= SETTINGS › ACCOUNT ================= -->
+    <section id="view-account" class="view grouped" aria-labelledby="h-account">
+      <button class="back-btn" data-back="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Settings
+      </button>
+      <header class="page-head">
+        <div>
+          <h1 class="large-title" id="h-account">App lock</h1>
+          <p class="page-sub">Change the username or password you use to open RepTracker.</p>
+        </div>
+      </header>
+      <form id="change-auth-form" autocomplete="on">
+        <div class="group field-group">
           <input type="text" id="ca-user" name="username" placeholder="Username" autocomplete="username"
                  autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
           <input type="password" id="ca-current" placeholder="Current password" autocomplete="current-password" maxlength="128" required>
           <input type="password" id="ca-new" placeholder="New password (leave blank to keep)" autocomplete="new-password" maxlength="128">
           <input type="password" id="ca-new2" placeholder="Confirm new password" autocomplete="new-password" maxlength="128">
-          <button class="btn block" type="submit">Save username &amp; password</button>
-        </form>
-        <button class="btn secondary block" id="lock-now">Lock now</button>
-        <p class="hint">The app locks every time it's opened and after a minute in the background. If you forget the password, the only way in is to erase this device's data, so keep a backup.</p>
-      </div>
-
-      <h2 class="section-h">Backup</h2>
-      <div class="card">
-        <p class="hint">Safari can clear website data after long inactivity. Export a backup now and then and keep it in Files or iCloud Drive.</p>
-        <p class="hint" id="backup-status"></p>
-        <div class="btn-row">
-          <button class="btn" id="export-btn">Export JSON</button>
-          <button class="btn secondary" id="import-btn">Import JSON</button>
         </div>
-        <input type="file" id="import-file" accept="application/json,.json" hidden>
-      </div>
-
-      <p class="footer-note">RepTracker · all data stays on this device · <span id="app-version"></span></p>
+        <button class="btn-primary block" type="submit">Save</button>
+      </form>
+      <p class="footnote">If you forget the password, the only way back in is to erase this device's RepTracker data, so export a backup now and then.</p>
     </section>
   </main>
 
   <nav class="tabbar" role="tablist">
-    <button role="tab" id="tab-log" data-view="log" class="active" aria-selected="true">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-      <span>Log</span>
+    <button role="tab" data-view="today" class="active" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.7 2.7L16.2 9.5"/></svg>
+      <span>Today</span>
     </button>
-    <button role="tab" id="tab-progress" data-view="progress" aria-selected="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19l5-6 4 3 7-9"/></svg>
+    <button role="tab" data-view="history" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+      <span>History</span>
+    </button>
+    <button role="tab" data-view="progress" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16"/><path d="M7.5 15l3.5-4 3 2.5 4.5-6"/></svg>
       <span>Progress</span>
     </button>
-    <button role="tab" id="tab-settings" data-view="settings" aria-selected="false">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
+    <button role="tab" data-view="settings" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="15" cy="7" r="2" class="knob"/><circle cx="9" cy="12" r="2" class="knob"/><circle cx="14" cy="17" r="2" class="knob"/></svg>
       <span>Settings</span>
     </button>
   </nav>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-
-  <dialog id="cal-dialog" class="cal-dialog" aria-label="Choose a date">
-    <div class="cal-head">
-      <button class="icon-btn" id="cal-prev" aria-label="Previous month">‹</button>
-      <div class="cal-title" id="cal-title" aria-live="polite"></div>
-      <button class="icon-btn" id="cal-next" aria-label="Next month">›</button>
-    </div>
-    <div class="cal-weekdays" aria-hidden="true">
-      <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
-    </div>
-    <div class="cal-grid" id="cal-grid" role="grid"></div>
-    <div class="cal-legend" aria-hidden="true">
-      <span><i class="lg-dot"></i> reps logged</span>
-      <span>❄️ freeze</span>
-    </div>
-    <div class="cal-actions">
-      <button class="btn secondary" id="cal-today">Today</button>
-      <button class="btn secondary" id="cal-close">Close</button>
-    </div>
-  </dialog>
 
   <dialog id="dialog">
     <form method="dialog">
