@@ -588,6 +588,7 @@
   function renderSettings() {
     renderExerciseEditor();
     renderFreezeList();
+    renderLockStatus();
     $('#reminder-enabled').checked = state.settings.reminderEnabled;
     $('#reminder-time').value = state.settings.reminderTime;
     renderNotifStatus();
@@ -762,6 +763,7 @@
 
   async function checkReminder() {
     clearTimeout(reminderTimer);
+    if (!unlocked) return;
     const s = renderStreak();
     if (!state.settings.reminderEnabled || s.loggedToday || s.frozenToday) return;
 
@@ -934,9 +936,226 @@
     }
   }
 
+  /* ================= app lock =================
+   * A local lock screen: there is no server, so this protects the app on this
+   * device (someone picking up your phone), it isn't an online account. The
+   * password is never stored — only a salted PBKDF2-SHA256 hash.
+   */
+  const PBKDF2_ITERATIONS = 600000;
+  const RELOCK_AFTER_MS = 60 * 1000;   // re-lock after a minute in the background
+  const FREE_ATTEMPTS = 5;             // then 30s, 60s, 120s… (max 15 min) timeouts
+  let unlocked = false;
+  let hiddenAt = null;
+  let unlockResolve = null;
+
+  const enc = new TextEncoder();
+  const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
+  const unb64 = (str) => Uint8Array.from(atob(str), (c) => c.charCodeAt(0));
+  const normUser = (u) => String(u || '').trim().toLowerCase();
+
+  async function hashPassword(password, salt, iterations) {
+    const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+    return new Uint8Array(bits);
+  }
+
+  function sameBytes(a, b) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+  }
+
+  async function makeAuth(username, password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const hash = await hashPassword(password, salt, PBKDF2_ITERATIONS);
+    return { username: String(username).trim(), salt: b64(salt), hash: b64(hash), iterations: PBKDF2_ITERATIONS };
+  }
+
+  async function passwordMatches(auth, password) {
+    return sameBytes(await hashPassword(password, unb64(auth.salt), auth.iterations), unb64(auth.hash));
+  }
+
+  function validateNew(username, password, confirm) {
+    if (!String(username).trim()) return 'Choose a username.';
+    if (password.length < 4) return 'Password must be at least 4 characters.';
+    if (password !== confirm) return 'The passwords don\'t match.';
+    return null;
+  }
+
+  async function lockoutRemaining() {
+    const f = await DB.getMeta('authFails', { count: 0, until: 0 });
+    return Math.max(0, (f.until || 0) - Date.now());
+  }
+
+  async function recordFailure() {
+    const f = await DB.getMeta('authFails', { count: 0, until: 0 });
+    f.count = (f.count || 0) + 1;
+    if (f.count >= FREE_ATTEMPTS) {
+      f.until = Date.now() + Math.min(15 * 60, 30 * 2 ** (f.count - FREE_ATTEMPTS)) * 1000;
+    }
+    await DB.setMeta('authFails', f);
+    return f;
+  }
+
+  const fmtWait = (ms) => {
+    const secs = Math.ceil(ms / 1000);
+    return secs >= 60 ? `${Math.ceil(secs / 60)} min` : `${secs}s`;
+  };
+
+  function showLockForm(mode) {
+    const setup = mode === 'setup';
+    $('#lock-sub').textContent = setup
+      ? 'Create a username and password. You\'ll need them every time you open the app.'
+      : 'Enter your username and password.';
+    $('#lock-form').dataset.mode = mode;
+    $('#lock-form').hidden = false;
+    $('#lock-pass2').hidden = !setup;
+    $('#lock-pass2').required = setup;
+    $('#lock-pass').autocomplete = setup ? 'new-password' : 'current-password';
+    $('#lock-submit').textContent = setup ? 'Create & open' : 'Unlock';
+    $('#lock-forgot').hidden = setup;
+  }
+
+  /** Show the lock screen; resolves once the user has unlocked. */
+  async function requireUnlock() {
+    unlocked = false;
+    document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+    if (document.activeElement) document.activeElement.blur();
+    document.body.classList.add('locked');
+    window.scrollTo(0, 0);
+    $('#lock-pass').value = '';
+    $('#lock-pass2').value = '';
+    $('#lock-error').textContent = '';
+    if (!(window.crypto && crypto.subtle)) {
+      $('#lock-sub').textContent = 'This browser can\'t run the app lock (it needs a secure https page).';
+      return new Promise(() => {});
+    }
+    const auth = await DB.getMeta('auth', null);
+    showLockForm(auth ? 'login' : 'setup');
+    return new Promise((resolve) => { unlockResolve = resolve; });
+  }
+
+  async function onLockSubmit(e) {
+    e.preventDefault();
+    const btn = $('#lock-submit');
+    const err = $('#lock-error');
+    const user = $('#lock-user').value;
+    const pass = $('#lock-pass').value;
+    err.textContent = '';
+    btn.disabled = true;
+    try {
+      if ($('#lock-form').dataset.mode === 'setup') {
+        const problem = validateNew(user, pass, $('#lock-pass2').value);
+        if (problem) { err.textContent = problem; return; }
+        await DB.setMeta('auth', await makeAuth(user, pass));
+      } else {
+        const wait = await lockoutRemaining();
+        if (wait > 0) { err.textContent = `Too many wrong tries. Try again in ${fmtWait(wait)}.`; return; }
+        const auth = await DB.getMeta('auth', null);
+        // Hash first either way, so a wrong username takes as long as a wrong password.
+        const ok = auth && (await passwordMatches(auth, pass)) && normUser(user) === normUser(auth.username);
+        if (!ok) {
+          const f = await recordFailure();
+          const left = FREE_ATTEMPTS - f.count;
+          err.textContent = left > 0
+            ? `Wrong username or password. ${left} ${left === 1 ? 'try' : 'tries'} left before a timeout.`
+            : `Wrong username or password. Try again in ${fmtWait(f.until - Date.now())}.`;
+          $('#lock-pass').value = '';
+          return;
+        }
+        await DB.setMeta('authFails', { count: 0, until: 0 });
+      }
+      $('#lock-pass').value = '';
+      $('#lock-pass2').value = '';
+      $('#lock-form').hidden = true;
+      unlocked = true;
+      document.body.classList.remove('locked');
+      if (unlockResolve) { unlockResolve(); unlockResolve = null; }
+    } catch (ex) {
+      err.textContent = 'Something went wrong: ' + ex.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function onForgotPassword() {
+    const res = await ask({
+      title: 'Forgot your password?',
+      body: 'There\'s no server, so the password can\'t be recovered or reset by email. The only way back in is to ' +
+        'erase ALL RepTracker data on this device (reps, exercises, freezes and settings), then create a new ' +
+        'password and import a backup if you have one. Type ERASE to confirm.',
+      input: { placeholder: 'Type ERASE', minLength: 5, maxLength: 5 },
+      actions: [{ label: 'Erase everything', value: 'erase', cls: 'danger' }],
+    });
+    if (!res) return;
+    if (res.text.toUpperCase() !== 'ERASE') {
+      $('#lock-error').textContent = 'Nothing was erased (you need to type ERASE).';
+      return;
+    }
+    await DB.eraseEverything();
+    location.reload();
+  }
+
+  async function lockNow() {
+    await flushSaves().catch(() => {});
+    await requireUnlock();
+    afterUnlock();
+  }
+
+  /** Re-render after a re-lock so the screen is fresh (day may have changed). */
+  function afterUnlock() {
+    renderStreak();
+    renderLog();
+    if (state.view === 'progress') renderProgress();
+    if (state.view === 'settings') renderSettings();
+    checkReminder();
+  }
+
+  async function renderLockStatus() {
+    const auth = await DB.getMeta('auth', null);
+    $('#lock-status').textContent = auth ? `Locked with username “${auth.username}”.` : '';
+    if (auth && document.activeElement !== $('#ca-user')) $('#ca-user').value = auth.username;
+  }
+
+  async function onChangeAuth(e) {
+    e.preventDefault();
+    const auth = await DB.getMeta('auth', null);
+    const user = $('#ca-user').value;
+    const current = $('#ca-current').value;
+    const n1 = $('#ca-new').value;
+    const n2 = $('#ca-new2').value;
+    if (!auth || !(await passwordMatches(auth, current))) {
+      await ask({ title: 'Not saved', body: 'Your current password is wrong.', actions: [] });
+      return;
+    }
+    const problem = n1 ? validateNew(user, n1, n2) : (!user.trim() ? 'Choose a username.' : null);
+    if (problem) {
+      await ask({ title: 'Not saved', body: problem, actions: [] });
+      return;
+    }
+    await DB.setMeta('auth', await makeAuth(user, n1 || current));
+    ['#ca-current', '#ca-new', '#ca-new2'].forEach((sel) => { $(sel).value = ''; });
+    document.activeElement && document.activeElement.blur();
+    renderLockStatus();
+    toast(n1 ? 'Username & password updated' : 'Username updated');
+  }
+
   /* ================= wiring ================= */
 
   function bindEvents() {
+    $('#lock-form').addEventListener('submit', onLockSubmit);
+    $('#lock-forgot').addEventListener('click', onForgotPassword);
+    $('#change-auth-form').addEventListener('submit', onChangeAuth);
+    $('#lock-now').addEventListener('click', lockNow);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+      } else if (unlocked && hiddenAt && Date.now() - hiddenAt > RELOCK_AFTER_MS) {
+        lockNow();
+      }
+    });
+
     document.querySelectorAll('.tabbar button').forEach((b) =>
       b.addEventListener('click', () => showView(b.dataset.view)));
 
@@ -1042,6 +1261,15 @@
   async function init() {
     $('#app-version').textContent = 'v' + (CONFIG.version || 'dev');
     bindEvents();
+    registerSW();
+    try {
+      await DB.open();
+    } catch (err) {
+      $('#lock-sub').textContent = 'Could not open storage: ' + err.message + '. Private Browsing can block it.';
+      return;
+    }
+    // Nothing is loaded or rendered until the lock screen is passed.
+    await requireUnlock();
     try {
       await DB.ensureDefaults();
       await loadAll();
@@ -1053,7 +1281,6 @@
     }
     renderStreak();
     renderLog();
-    registerSW();
     checkReminder();
     // Ask the browser not to evict our data (best effort; helps on some platforms).
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

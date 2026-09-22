@@ -14,6 +14,9 @@
   const DB_NAME = 'reptracker';
   const DB_VERSION = 2;
   const MAX_REASON = 280;
+  // Meta keys that belong to this device only: never exported, never imported.
+  // (Importing `auth` would let a crafted backup replace the app-lock password.)
+  const DEVICE_KEYS = ['seeded', 'lastNotified', 'lastBackup', 'pushSubscription', 'auth', 'authFails'];
   let dbPromise = null;
 
   function open() {
@@ -80,6 +83,20 @@
   const RepDB = {
     open,
     uid,
+
+    /** Close and permanently delete the whole database (used by "forgot password"). */
+    async eraseEverything() {
+      if (dbPromise) {
+        try { (await dbPromise).close(); } catch (_) { /* ignore */ }
+        dbPromise = null;
+      }
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.deleteDatabase(DB_NAME);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+        req.onblocked = () => resolve(); // other connections close via onversionchange
+      });
+    },
 
     /* ---------- exercises ---------- */
     async getExercises({ includeArchived = false } = {}) {
@@ -200,7 +217,7 @@
       const settings = {};
       meta.forEach((m) => {
         // Device-specific state doesn't belong in a backup.
-        if (!['seeded', 'lastNotified', 'lastBackup', 'pushSubscription'].includes(m.key)) {
+        if (!DEVICE_KEYS.includes(m.key)) {
           settings[m.key] = m.value;
         }
       });
@@ -268,7 +285,9 @@
           if (reps > 0) en.put({ id: e.date + '|' + e.exerciseId, date: e.date, exerciseId: e.exerciseId, reps });
         });
         if (data.settings && typeof data.settings === 'object') {
-          Object.entries(data.settings).forEach(([key, value]) => me.put({ key, value }));
+          Object.entries(data.settings)
+            .filter(([key]) => !DEVICE_KEYS.includes(key))
+            .forEach(([key, value]) => me.put({ key, value }));
         }
         me.put({ key: 'seeded', value: true });
 

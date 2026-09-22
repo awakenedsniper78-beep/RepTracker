@@ -304,3 +304,26 @@ dialog p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
 .history .h-freeze { color: #7dd3fc; }
 dialog textarea { margin-bottom: 4px; font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 .dialog-count { text-align: right; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+
+/* ---------- app lock ---------- */
+body.locked .topbar, body.locked main, body.locked .tabbar, body.locked .toast { display: none !important; }
+body:not(.locked) .lock { display: none; }
+.lock {
+  min-height: 100vh; min-height: 100dvh;
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(var(--safe-top) + 24px) calc(var(--safe-right) + 20px) calc(var(--safe-bottom) + 24px) calc(var(--safe-left) + 20px);
+}
+.lock-card { width: 100%; max-width: 360px; text-align: center; }
+.lock-logo { width: 72px; height: 72px; border-radius: 18px; }
+.lock-title { margin: 14px 0 4px; font-size: 26px; letter-spacing: -0.01em; }
+.lock-sub { margin: 0 0 20px; color: var(--muted); font-size: 15px; }
+#lock-form input, .stack input {
+  display: block; width: 100%; height: 48px; margin-top: 10px; padding: 0 14px;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font-size: 16px;
+}
+#lock-form input:focus, .stack input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.stack input { background: var(--bg); height: 44px; }
+.lock-error { min-height: 20px; margin: 10px 0 0; color: var(--danger); font-size: 14px; }
+.lock-error:empty { min-height: 0; margin: 0; }
+#lock-submit { margin-top: 14px; height: 48px; }
+.lock .link-btn { margin-top: 16px; color: var(--muted); }

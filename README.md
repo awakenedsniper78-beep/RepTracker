@@ -18,6 +18,12 @@ no build step, no backend. All data stays on your device in IndexedDB.
 - **Progress** chart per exercise (or several at once), 30D / 90D / 1Y / All, optional 7-day average trend
 - **Custom exercises**: add, rename, reorder, hide (keeps history) or delete
 - **Backup**: export / import a JSON file (merge or replace)
+- **App lock**: a username and password (set on first launch) are required every
+  time the app opens and after a minute in the background. It's a local lock, not
+  an online account: only a salted PBKDF2-SHA256 hash is stored, 5 wrong tries
+  trigger growing timeouts, and a forgotten password can only be cleared by
+  erasing the device's data (so keep a backup). The lock is never exported, and
+  imports can't change it.
 - **Offline**: a service worker caches the whole app; Chart.js is bundled in `vendor/`
 - **Reminders**: in-app banner + same-session notification, plus optional daily Web Push
 

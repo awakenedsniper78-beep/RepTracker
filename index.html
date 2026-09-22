@@ -21,7 +21,25 @@
 
   <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
+<body class="locked">
+  <!-- App lock. The body starts .locked so nothing else renders until unlocked. -->
+  <div class="lock" id="lock">
+    <div class="lock-card">
+      <img class="lock-logo" src="icons/icon-192-v2.png" alt="" width="72" height="72">
+      <h1 class="lock-title">RepTracker</h1>
+      <p class="lock-sub" id="lock-sub">Loading…</p>
+      <form id="lock-form" autocomplete="on" hidden>
+        <input type="text" id="lock-user" name="username" placeholder="Username" autocomplete="username"
+               autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
+        <input type="password" id="lock-pass" name="password" placeholder="Password" autocomplete="current-password" maxlength="128" required>
+        <input type="password" id="lock-pass2" name="password-confirm" placeholder="Confirm password" autocomplete="new-password" maxlength="128" hidden>
+        <p class="lock-error" id="lock-error" role="alert"></p>
+        <button class="btn block" type="submit" id="lock-submit">Unlock</button>
+      </form>
+      <button class="link-btn" id="lock-forgot" hidden>Forgot password?</button>
+    </div>
+  </div>
+
   <header class="topbar">
     <h1 id="screen-title">RepTracker</h1>
   </header>
@@ -133,6 +151,21 @@
           <button class="link-btn danger" id="push-unsubscribe">Turn off push reminders</button>
         </div>
         <p class="hint" id="push-status"></p>
+      </div>
+
+      <h2 class="section-h">App lock</h2>
+      <div class="card">
+        <p class="hint" id="lock-status"></p>
+        <form class="stack" id="change-auth-form" autocomplete="on">
+          <input type="text" id="ca-user" name="username" placeholder="Username" autocomplete="username"
+                 autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="40" required>
+          <input type="password" id="ca-current" placeholder="Current password" autocomplete="current-password" maxlength="128" required>
+          <input type="password" id="ca-new" placeholder="New password (leave blank to keep)" autocomplete="new-password" maxlength="128">
+          <input type="password" id="ca-new2" placeholder="Confirm new password" autocomplete="new-password" maxlength="128">
+          <button class="btn block" type="submit">Save username &amp; password</button>
+        </form>
+        <button class="btn secondary block" id="lock-now">Lock now</button>
+        <p class="hint">The app locks every time it's opened and after a minute in the background. If you forget the password, the only way in is to erase this device's data, so keep a backup.</p>
       </div>
 
       <h2 class="section-h">Backup</h2>
