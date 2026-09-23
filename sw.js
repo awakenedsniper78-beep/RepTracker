@@ -1,7 +1,7 @@
 /* RepTracker service worker: offline app shell + push reminders.
  * Bump VERSION whenever any cached file changes so clients pick up the update.
  */
-const VERSION = 'v1.7.0';
+const VERSION = 'v1.8.0';
 const CACHE = 'reptracker-' + VERSION;
 
 const SHELL = [

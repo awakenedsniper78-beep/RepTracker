@@ -8,6 +8,7 @@
  *   meta:      { key, value }
  *   freezes:   { date, reason, createdAt, bonus? }  — permanent: add-only, never edited or deleted
  *   meta.gems / meta.bonusFreezes: earned from lessons; a bonus freeze lifts the one-per-week limit once
+ *   meta.gemBoostUntil: ms timestamp; a lesson started before it earns boosted gems (device-only)
  */
 (function (global) {
   'use strict';
@@ -17,7 +18,7 @@
   const MAX_REASON = 280;
   // Meta keys that belong to this device only: never exported, never imported.
   // (`auth`/`authFails` belonged to the old password lock and are never imported.)
-  const DEVICE_KEYS = ['seeded', 'lastNotified', 'lastBackup', 'pushSubscription', 'auth', 'authFails'];
+  const DEVICE_KEYS = ['seeded', 'lastNotified', 'lastBackup', 'pushSubscription', 'auth', 'authFails', 'gemBoostUntil'];
   let dbPromise = null;
 
   function open() {

@@ -25,6 +25,16 @@
   --bar-bg: rgba(255, 255, 255, .94);
   --bar-border: #e5e5ea;
   --shadow: 0 1px 2px rgba(0, 0, 0, .04);
+  /* Progress chart, one color per exercise in order. Checked as a set in each theme: lightness,
+     chroma, color-blind separation of neighbors, and at least 3:1 against the chart card. */
+  --series-1: var(--accent);
+  --series-2: #eb6834;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
   --radius: 18px;
   --gutter: 22px;
   --tabbar-h: 56px;
@@ -57,6 +67,9 @@
     --bar-bg: rgba(22, 22, 24, .94);
     --bar-border: #2c2c2e;
     --shadow: none;
+    --series-2: #d95926;
+    --series-7: #9085e9;
+    --series-8: #e66767;
   }
 }
 :root[data-theme="dark"] {
@@ -81,6 +94,9 @@
   --bar-bg: rgba(22, 22, 24, .94);
   --bar-border: #2c2c2e;
   --shadow: none;
+  --series-2: #d95926;
+  --series-7: #9085e9;
+  --series-8: #e66767;
 }
 
 * { box-sizing: border-box; }
@@ -523,6 +539,9 @@ html.lesson-open, html.lesson-open body { overflow: hidden; }
   animation: gem-pop .7s cubic-bezier(.3, 1.6, .5, 1) both;
 }
 .gem-reward svg { width: 30px; height: 30px; animation: gem-spin 1.2s ease-out .2s both; }
+.boost-tag { padding: 3px 10px; border-radius: 999px; background: var(--gem); color: var(--bg); font-size: 15px; font-weight: 800; }
+.notice.boost { margin-bottom: 16px; }
+.notice.boost .notice-icon { background: var(--gem); }
 @keyframes gem-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes gem-spin { from { transform: rotateY(0); } to { transform: rotateY(720deg); } }
 @media (prefers-reduced-motion: reduce) { .gem-reward, .gem-reward svg { animation: none; } }
