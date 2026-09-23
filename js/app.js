@@ -4,6 +4,7 @@
 
   const { todayKey, addDays, fromKey, toKey, dailyTotals, weekStart, streaks } = window.RepStats;
   const DB = window.RepDB;
+  const L = window.RepLessons;
   const CONFIG = window.REPTRACKER_CONFIG || {};
 
   // Chart lines are told apart by dash pattern (and a little by color), as in the design.
@@ -51,6 +52,11 @@
     chartSelected: null,     // Set of exercise ids
     chartRange: '30',
     settings: { reminderEnabled: true, reminderTime: '19:00' },
+    lessonAreas: L.AREAS.map(([a]) => a), // focus areas picked on the body map
+    lessonsDone: [],         // { id, name, date, total, unit, feel }
+    lessonAdjust: 0,         // -2..2, nudged by "too easy / too hard"
+    lessonSkip: new Set(),   // suggestions skipped this session
+    lesson: null,            // the lesson in progress
   };
 
   let chart = null;
@@ -140,13 +146,19 @@
   /* ================= data ================= */
 
   async function loadAll() {
-    const [all, entries, freezes, reminderEnabled, reminderTime] = await Promise.all([
+    const [all, entries, freezes, reminderEnabled, reminderTime, areas, done, adjust] = await Promise.all([
       DB.getExercises({ includeArchived: true }),
       DB.getAllEntries(),
       DB.getFreezes(),
       DB.getMeta('reminderEnabled', true),
       DB.getMeta('reminderTime', '19:00'),
+      DB.getMeta('lessonAreas', null),
+      DB.getMeta('lessonsDone', []),
+      DB.getMeta('lessonAdjust', 0),
     ]);
+    if (Array.isArray(areas) && areas.length) state.lessonAreas = areas;
+    state.lessonsDone = Array.isArray(done) ? done : [];
+    state.lessonAdjust = Number(adjust) || 0;
     state.allExercises = all;
     state.exercises = all.filter((e) => !e.archived);
     state.entries = entries;
@@ -205,14 +217,14 @@
 
   /* ================= navigation ================= */
 
-  const TAB_FOR = { today: 'today', history: 'history', progress: 'progress', settings: 'settings', exercises: 'settings' };
+  const TAB_FOR = { today: 'today', history: 'history', progress: 'progress', learn: 'learn', settings: 'settings', exercises: 'settings', areas: 'settings' };
 
   function showView(view) {
     if (!TAB_FOR[view]) view = 'today';
     state.view = view;
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + view));
     document.querySelectorAll('.tabbar button').forEach((b) => {
-      const on = b.dataset.view === TAB_FOR[view];
+      const on = b.dataset.view === (view === 'areas' ? $('#areas-back').dataset.back : TAB_FOR[view]);
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on);
     });
@@ -228,6 +240,8 @@
     else if (v === 'progress') renderProgress();
     else if (v === 'settings') renderSettings();
     else if (v === 'exercises') renderExerciseEditor();
+    else if (v === 'learn') renderLearn();
+    else if (v === 'areas') renderAreas();
   }
 
   /* ================= stepper (shared by Today and History) ================= */
@@ -611,10 +625,278 @@
     }
   }
 
+  /* ================= LEARN (lessons) ================= */
+
+  const areaLabels = (areas) => areas.map((a) => L.AREA_LABEL[a]);
+
+  function areasSummary() {
+    const n = state.lessonAreas.length;
+    return n === L.AREAS.length ? 'All' : n === 1 ? L.AREA_LABEL[state.lessonAreas[0]] : n + ' areas';
+  }
+
+  /** What lesson picking adapts to: the last 4 weeks of logged reps. */
+  function lessonContext() {
+    const since = addDays(todayKey(), -27);
+    return {
+      level: L.userLevel(state.entries, since, state.lessonAdjust),
+      trained: L.areasTrained(state.allExercises, state.entries, since),
+    };
+  }
+
+  const unitWord = (ex, n) => (ex.unit === 'sec' ? n + ' sec' : plural(n, 'rep')) + (ex.note ? ' ' + ex.note : '');
+  const chips = (areas) => el('div', { class: 'area-chips static' }, areaLabels(areas).map((a) => el('span', { class: 'area-chip on' }, a)));
+
+  function renderLearn() {
+    const ctx = lessonContext();
+    const ex = L.pickLesson({
+      areas: state.lessonAreas, level: ctx.level, done: state.lessonsDone, skip: state.lessonSkip,
+      owned: state.exercises.map((e) => e.name), trained: ctx.trained,
+    });
+    const box = $('#learn-next');
+    if (!ex) {
+      const skipped = state.lessonSkip.size > 0;
+      box.replaceChildren(el('div', { class: 'lesson-card' },
+        el('div', { class: 'lc-name' }, skipped ? 'That’s all of them' : 'Nothing new here yet'),
+        el('p', { class: 'lc-why' }, skipped
+          ? 'You’ve skipped every lesson for these areas.'
+          : 'No lessons left for these areas at your level. Pick more areas, or keep logging reps to unlock harder ones.'),
+        skipped
+          ? el('button', { class: 'btn-primary block', onclick: () => { state.lessonSkip.clear(); renderLearn(); } }, 'Start over')
+          : el('button', { class: 'btn-primary block', onclick: () => openAreas('learn') }, 'Pick areas')));
+    } else {
+      box.replaceChildren(el('div', { class: 'lesson-card' },
+        el('div', { class: 'lc-eyebrow' }, 'Next lesson · ' + L.LEVELS[ex.level - 1]),
+        el('div', { class: 'lc-name' }, ex.name),
+        chips(ex.areas),
+        el('p', { class: 'lc-why' }, L.why(ex, ctx.trained, ctx.level)),
+        el('div', { class: 'lc-meta' }, `About 5 min · 3 sets of ${unitWord(ex, L.target(ex, ctx.level))}`),
+        el('button', { class: 'btn-primary block', onclick: () => startLesson(ex, ctx) }, 'Start lesson'),
+        el('button', { class: 'text-btn lc-skip', onclick: () => { state.lessonSkip.add(ex.id); renderLearn(); } }, 'Show me a different one')));
+    }
+
+    $('#learn-area-list').replaceChildren(...chips(state.lessonAreas).children);
+    const done = state.lessonsDone.slice().reverse();
+    $('#learn-done-count').textContent = done.length ? plural(done.length, 'lesson') : '';
+    $('#learn-done').replaceChildren(...(done.length
+      ? done.slice(0, 20).map((d) => el('div', { class: 'row' },
+        el('span', { class: 'row-main' },
+          el('span', { class: 'row-title' }, d.name),
+          el('span', { class: 'row-sub' }, `${formatDate(d.date)} · ${fmt(d.total)} ${d.unit === 'sec' ? 'sec' : 'reps'}`))))
+      : [el('div', { class: 'row' }, el('span', { class: 'row-sub' }, 'Finish a lesson and it shows up here.'))]));
+  }
+
+  /* ---------- Focus areas (body map) ---------- */
+
+  function openAreas(from) {
+    const back = $('#areas-back');
+    back.dataset.back = from;
+    back.querySelector('span').textContent = from === 'learn' ? 'Learn' : 'Settings';
+    showView('areas');
+  }
+
+  function renderAreas() {
+    const on = new Set(state.lessonAreas);
+    document.querySelectorAll('#body-map [data-area]').forEach((z) => z.classList.toggle('on', on.has(z.dataset.area)));
+    $('#area-chips').replaceChildren(...L.AREAS.map(([a, label]) => el('button', {
+      class: 'area-chip' + (on.has(a) ? ' on' : ''), 'aria-pressed': String(on.has(a)), onclick: () => toggleArea(a),
+    }, label)));
+  }
+
+  async function toggleArea(area) {
+    const on = state.lessonAreas.includes(area);
+    if (on && state.lessonAreas.length === 1) { toast('Keep at least one area'); return; }
+    state.lessonAreas = on ? state.lessonAreas.filter((a) => a !== area) : [...state.lessonAreas, area];
+    state.lessonSkip.clear();
+    renderAreas();
+    try { await DB.setMeta('lessonAreas', state.lessonAreas); } catch (err) { toast('Could not save — ' + err.message); }
+  }
+
+  /* ---------- Lesson runner ---------- */
+
+  let lessonTimer = null;
+  const clock = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  const buzz = () => { try { if (navigator.vibrate) navigator.vibrate(200); } catch (_) { /* unsupported */ } };
+  const logName = (ex) => ex.name + (ex.unit === 'sec' ? ' (sec)' : '');
+
+  function startLesson(ex, ctx) {
+    state.lesson = {
+      ex, level: ctx.level, why: L.why(ex, ctx.trained, ctx.level), steps: L.buildLesson(ex, ctx.level),
+      i: 0, done: [], right: 0, asked: 0, feel: null, log: true,
+    };
+    $('#lesson').hidden = false;
+    document.documentElement.classList.add('lesson-open');
+    renderLessonStep();
+  }
+
+  function closeLesson() {
+    clearInterval(lessonTimer);
+    state.lesson = null;
+    $('#lesson').hidden = true;
+    document.documentElement.classList.remove('lesson-open');
+  }
+
+  async function quitLesson() {
+    const l = state.lesson;
+    if (!l) return;
+    if (l.i > 0) {
+      const c = await ask({ title: 'Quit this lesson?', body: 'You’ll lose your progress in it.', actions: [{ label: 'Quit', value: 'quit', cls: 'danger' }] });
+      if (c !== 'quit') return;
+    }
+    closeLesson();
+  }
+
+  function nextStep() {
+    state.lesson.i++;
+    renderLessonStep();
+  }
+
+  function lessonButton(label, onclick, { disabled = false, cls = '' } = {}) {
+    const b = el('button', { class: ('btn-primary block ' + cls).trim(), onclick }, label);
+    b.disabled = disabled;
+    $('#lesson-foot').replaceChildren(b);
+    return b;
+  }
+
+  function renderLessonStep() {
+    clearInterval(lessonTimer);
+    const l = state.lesson;
+    const { ex } = l;
+    const step = l.steps[l.i];
+    const body = $('#lesson-body');
+    const head = (eyebrow, title, cls = '') => [el('div', { class: 'ls-eyebrow' }, eyebrow), el('h2', { class: ('ls-title ' + cls).trim() }, title)];
+    const text = (t, cls = '') => el('p', { class: ('ls-text ' + cls).trim() }, t);
+    $('#lesson').className = 'lesson';
+    $('#lesson-bar').style.width = (l.i / (l.steps.length - 1)) * 100 + '%';
+    body.scrollTop = 0;
+
+    if (step.type === 'intro') {
+      body.replaceChildren(...head('New exercise', ex.name), chips(ex.areas), text(l.why),
+        text(`You’ll learn the form, answer two quick questions, and do 3 sets of ${unitWord(ex, L.target(ex, l.level))}.`, 'muted'));
+      lessonButton('Let’s go', nextStep);
+    } else if (step.type === 'learn') {
+      body.replaceChildren(...head('How to do it', ex.name),
+        el('ol', { class: 'ls-steps' }, ex.steps.map((s) => el('li', {}, s))),
+        el('div', { class: 'ls-tip' }, el('strong', {}, 'Watch out: '), ex.tip));
+      lessonButton('Got it', nextStep);
+    } else if (step.type === 'quiz') {
+      let picked = null;
+      const opts = step.options.map((o, i) => el('button', {
+        class: 'ls-option', onclick: () => {
+          picked = i;
+          opts.forEach((b, j) => b.classList.toggle('picked', j === i));
+          check.disabled = false;
+        },
+      }, o));
+      body.replaceChildren(...head('Quick check', step.q, 'small'), el('div', { class: 'ls-options' }, opts));
+      const check = lessonButton('Check', () => {
+        const right = picked === step.answer;
+        l.asked++;
+        if (right) l.right++;
+        else l.steps.splice(l.steps.length - 1, 0, step); // Duolingo-style: a missed question comes back before the end
+        opts.forEach((b, j) => {
+          b.disabled = true;
+          b.classList.toggle('right', j === step.answer);
+          b.classList.toggle('wrong', j === picked && !right);
+        });
+        $('#lesson').className = 'lesson ' + (right ? 'is-right' : 'is-wrong');
+        $('#lesson-foot').replaceChildren(
+          el('div', { class: 'ls-verdict', role: 'status' }, right ? 'Nice!' : `Not quite — it’s “${step.options[step.answer]}”. You’ll get this one again.`),
+          el('button', { class: 'btn-primary block', onclick: nextStep }, 'Continue'));
+      }, { disabled: true });
+    } else if (step.type === 'set' && ex.unit === 'sec') {
+      let left = step.target;
+      const big = el('div', { class: 'ls-big', role: 'timer' }, clock(left));
+      body.replaceChildren(...head(`Set ${step.n} of ${step.of}`, ex.name), big,
+        text(`Hold for ${unitWord(ex, step.target)}. ${ex.tip}`, 'muted center'));
+      const finish = () => {
+        clearInterval(lessonTimer);
+        l.done.push(step.target - left);
+        buzz();
+        big.textContent = 'Done!';
+        lessonButton('Continue', nextStep);
+      };
+      lessonButton('Start timer', () => {
+        lessonButton('Stop early', finish, { cls: 'secondary' });
+        lessonTimer = setInterval(() => {
+          left--;
+          big.textContent = clock(left);
+          if (left <= 0) finish();
+        }, 1000);
+      });
+    } else if (step.type === 'set') {
+      let n = step.target;
+      const count = el('div', { class: 'ls-big' }, String(n));
+      const adj = (d) => { n = Math.max(0, n + d); count.textContent = n; };
+      body.replaceChildren(...head(`Set ${step.n} of ${step.of}`, ex.name),
+        text(`Do ${unitWord(ex, step.target)}, then tap Done. Did more or fewer? Adjust the number.`, 'muted center'),
+        el('div', { class: 'ls-counter' },
+          el('button', { class: 'step-btn minus', 'aria-label': 'Fewer', html: ICONS.minus, onclick: () => adj(-1) }),
+          count,
+          el('button', { class: 'step-btn plus', 'aria-label': 'More', html: ICONS.plus, onclick: () => adj(1) })));
+      lessonButton('Done', () => { l.done.push(n); nextStep(); });
+    } else if (step.type === 'rest') {
+      let left = step.sec;
+      const big = el('div', { class: 'ls-big', role: 'timer' }, clock(left));
+      body.replaceChildren(...head('Rest', 'Catch your breath'), big, text(`Up next: set ${step.next} of 3`, 'muted center'));
+      lessonTimer = setInterval(() => {
+        left--;
+        big.textContent = clock(Math.max(0, left));
+        if (left <= 0) { buzz(); nextStep(); }
+      }, 1000);
+      lessonButton('Skip rest', nextStep, { cls: 'secondary' });
+    } else if (step.type === 'finish') {
+      const total = l.done.reduce((a, b) => a + b, 0);
+      const stat = (label, value) => el('div', { class: 'stat' }, el('div', { class: 'stat-label' }, label), el('div', { class: 'stat-value' }, value));
+      const seg = el('div', { class: 'segmented ls-feel', role: 'group', 'aria-label': 'How did it feel?' },
+        [['hard', 'Too hard'], ['right', 'Just right'], ['easy', 'Too easy']].map(([v, label]) => el('button', {
+          onclick: (e) => {
+            l.feel = v;
+            seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === e.currentTarget));
+            btn.disabled = false;
+          },
+        }, label)));
+      body.replaceChildren(...head('Lesson complete', ex.name + ' ✓'),
+        el('div', { class: 'stat-row' },
+          stat(ex.unit === 'sec' ? 'Seconds' : 'Reps', fmt(total)), stat('Sets', String(l.done.length)), stat('Quiz', `${l.right}/${l.asked}`)),
+        el('h3', { class: 'ls-sub' }, 'How did that feel?'), seg,
+        text('Your next lessons get harder or easier based on this.', 'muted'),
+        el('label', { class: 'row ls-log' },
+          el('span', { class: 'row-main' },
+            el('span', { class: 'row-title' }, `Log ${fmt(total)} ${ex.unit === 'sec' ? 'seconds' : 'reps'} for today`),
+            el('span', { class: 'row-sub' }, `Adds “${logName(ex)}” to your Today list`)),
+          el('input', { type: 'checkbox', class: 'switch', checked: true, onchange: (e) => { l.log = e.target.checked; } })));
+      const btn = lessonButton('Finish', () => finishLesson(total).catch((err) => toast('Could not save — ' + err.message)), { disabled: true });
+    }
+  }
+
+  async function finishLesson(total) {
+    const l = state.lesson;
+    const { ex } = l;
+    const today = todayKey();
+    const logged = l.log && total > 0;
+    state.lessonsDone.push({ id: ex.id, name: ex.name, date: today, total, unit: ex.unit, feel: l.feel });
+    state.lessonAdjust = Math.max(-2, Math.min(2, state.lessonAdjust + ({ easy: 1, hard: -1 }[l.feel] || 0)));
+    await DB.setMeta('lessonsDone', state.lessonsDone);
+    await DB.setMeta('lessonAdjust', state.lessonAdjust);
+    if (logged) {
+      const name = logName(ex).toLowerCase();
+      let target = state.allExercises.find((e) => e.name.toLowerCase() === name);
+      if (!target) target = await DB.addExercise(logName(ex));
+      else if (target.archived) await DB.putExercise({ ...target, archived: false });
+      await flushSaves();
+      await DB.setReps(today, target.id, repsFor(today, target.id) + total);
+    }
+    closeLesson();
+    await refreshAll();
+    toast(logged ? `Lesson done — ${ex.name} logged on Today` : 'Lesson done!');
+  }
+
+
   /* ================= SETTINGS ================= */
 
   function renderSettings() {
     $('#exercise-count').textContent = state.exercises.length;
+    $('#areas-count').textContent = areasSummary();
     $('#reminder-enabled').checked = state.settings.reminderEnabled;
     $('#reminder-time').value = state.settings.reminderTime;
     renderFreezeList();
@@ -985,6 +1267,13 @@
     $('#today-edit').addEventListener('click', () => showView('exercises'));
     $('#notice-freeze').addEventListener('click', () => useFreeze(todayKey()));
     $('#open-exercises').addEventListener('click', () => showView('exercises'));
+    $('#open-areas').addEventListener('click', () => openAreas('settings'));
+    $('#learn-areas').addEventListener('click', () => openAreas('learn'));
+    $('#body-map').addEventListener('click', (e) => {
+      const zone = e.target.closest('[data-area]');
+      if (zone) toggleArea(zone.dataset.area);
+    });
+    $('#lesson-close').addEventListener('click', quitLesson);
 
     // History calendar (arrows + swipe)
     $('#cal-prev').addEventListener('click', () => shiftCalMonth(-1));

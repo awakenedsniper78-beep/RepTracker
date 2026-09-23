@@ -177,6 +177,15 @@
         </button>
       </div>
 
+      <h2 class="group-label">Lessons</h2>
+      <div class="group">
+        <button class="row nav-row" id="open-areas">
+          <span class="row-main"><span class="row-title">Focus areas</span></span>
+          <span class="row-value" id="areas-count"></span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
       <h2 class="group-label">Reminders</h2>
       <div class="group">
         <label class="row">
@@ -273,6 +282,43 @@
       <p class="footnote">Push-ups and pull-ups are there to start. Removing an exercise lets you hide it (keeps its history) or delete it along with its history.</p>
     </section>
 
+    <!-- ================= LEARN ================= -->
+    <section id="view-learn" class="view" aria-labelledby="h-learn">
+      <header class="page-head">
+        <div>
+          <h1 class="large-title" id="h-learn">Learn</h1>
+          <p class="page-sub">Five-minute lessons that teach you a new exercise.</p>
+        </div>
+      </header>
+      <div id="learn-next"></div>
+      <div class="section-row">
+        <h2 class="section-title">Focus areas</h2>
+        <button class="text-btn" id="learn-areas">Change</button>
+      </div>
+      <div class="area-chips static" id="learn-area-list"></div>
+      <div class="section-row">
+        <h2 class="section-title">Completed</h2>
+        <span class="row-value" id="learn-done-count"></span>
+      </div>
+      <div class="group" id="learn-done"></div>
+    </section>
+
+    <!-- ================= SETTINGS › FOCUS AREAS ================= -->
+    <section id="view-areas" class="view grouped" aria-labelledby="h-areas">
+      <button class="back-btn" data-back="settings" id="areas-back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>Settings</span>
+      </button>
+      <header class="page-head">
+        <div>
+          <h1 class="large-title" id="h-areas">Focus areas</h1>
+          <p class="page-sub">Tap the body to pick what your lessons work on.</p>
+        </div>
+      </header>
+      <div class="map-card"><svg class="body-map" id="body-map" viewBox="0 0 260 266" aria-hidden="true"><g><g class="body-base"><circle cx="60" cy="20" r="13"/><rect x="54" y="31" width="12" height="10"/><circle cx="27" cy="133" r="5"/><circle cx="93" cy="133" r="5"/><rect x="46" y="112" width="28" height="15" rx="6"/><rect x="45" y="238" width="13" height="7" rx="3"/><rect x="62" y="238" width="13" height="7" rx="3"/></g><g class="zone" data-area="shoulders"><circle cx="37" cy="50" r="10"/><circle cx="83" cy="50" r="10"/></g><g class="zone" data-area="arms"><rect x="24" y="61" width="11" height="32" rx="5.5"/><rect x="85" y="61" width="11" height="32" rx="5.5"/><rect x="22" y="96" width="10" height="32" rx="5"/><rect x="88" y="96" width="10" height="32" rx="5"/></g><g class="zone" data-area="chest"><rect x="46" y="42" width="28" height="26" rx="7"/></g><g class="zone" data-area="core"><rect x="47" y="70" width="26" height="40" rx="7"/></g><g class="zone" data-area="legs"><rect x="45" y="129" width="14" height="56" rx="7"/><rect x="61" y="129" width="14" height="56" rx="7"/><rect x="46" y="189" width="12" height="47" rx="6"/><rect x="62" y="189" width="12" height="47" rx="6"/></g><text x="60" y="260">Front</text></g><g transform="translate(140 0)"><g class="body-base"><circle cx="60" cy="20" r="13"/><rect x="54" y="31" width="12" height="10"/><circle cx="27" cy="133" r="5"/><circle cx="93" cy="133" r="5"/><rect x="45" y="238" width="13" height="7" rx="3"/><rect x="62" y="238" width="13" height="7" rx="3"/></g><g class="zone" data-area="shoulders"><circle cx="37" cy="50" r="10"/><circle cx="83" cy="50" r="10"/></g><g class="zone" data-area="arms"><rect x="24" y="61" width="11" height="32" rx="5.5"/><rect x="85" y="61" width="11" height="32" rx="5.5"/><rect x="22" y="96" width="10" height="32" rx="5"/><rect x="88" y="96" width="10" height="32" rx="5"/></g><g class="zone" data-area="back"><rect x="46" y="42" width="28" height="68" rx="8"/></g><g class="zone" data-area="glutes"><rect x="45" y="112" width="30" height="24" rx="10"/></g><g class="zone" data-area="legs"><rect x="45" y="138" width="14" height="48" rx="7"/><rect x="61" y="138" width="14" height="48" rx="7"/><rect x="46" y="190" width="12" height="46" rx="6"/><rect x="62" y="190" width="12" height="46" rx="6"/></g><text x="60" y="260">Back</text></g></svg></div>
+      <div class="area-chips" id="area-chips" role="group" aria-label="Focus areas"></div>
+      <p class="footnote">Lessons only teach exercises that work at least one of these areas.</p>
+    </section>
+
   </main>
 
   <nav class="tabbar" role="tablist">
@@ -288,11 +334,26 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16h16"/><path d="M7.5 15l3.5-4 3 2.5 4.5-6"/></svg>
       <span>Progress</span>
     </button>
+    <button role="tab" data-view="learn" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 9 12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v4.5c3.3 2.3 7.7 2.3 11 0V11M21.5 9v5"/></svg>
+      <span>Learn</span>
+    </button>
     <button role="tab" data-view="settings" aria-selected="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="15" cy="7" r="2" class="knob"/><circle cx="9" cy="12" r="2" class="knob"/><circle cx="14" cy="17" r="2" class="knob"/></svg>
       <span>Settings</span>
     </button>
   </nav>
+
+  <div class="lesson" id="lesson" role="dialog" aria-modal="true" aria-label="Lesson" hidden>
+    <div class="lesson-top">
+      <button class="lesson-close" id="lesson-close" aria-label="Quit lesson">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <div class="lesson-progress"><div id="lesson-bar"></div></div>
+    </div>
+    <div class="lesson-body" id="lesson-body"></div>
+    <div class="lesson-foot" id="lesson-foot"></div>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
@@ -310,6 +371,7 @@
   <script src="js/config.js" defer></script>
   <script src="js/stats.js" defer></script>
   <script src="js/db.js" defer></script>
+  <script src="js/lessons.js" defer></script>
   <script src="js/app.js" defer></script>
 </body>
 </html>
