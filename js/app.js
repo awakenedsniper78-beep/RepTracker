@@ -7,18 +7,18 @@
   const L = window.RepLessons;
   const FIG = window.RepFigures;
   const GEM_REWARD = 5;      // gems per finished lesson
-  const FREEZE_COST = 100;   // gems for one bonus streak freeze
+  const BOOST = 1.5;         // gem multiplier for a lesson started within BOOST_MS of finishing one
+  const BOOST_MS = 20 * 60 * 1000;
+  const FREEZE_COST = 20;    // gems for one bonus streak freeze
   const CONFIG = window.REPTRACKER_CONFIG || {};
 
-  // Chart lines are told apart by dash pattern (and a little by color), as in the design.
-  const LINE_STYLES = [
-    { color: '--accent', dash: [], width: 3 },
-    { color: '--text', dash: [7, 6], width: 2.5 },
-    { color: '--text-2', dash: [2, 5], width: 2.5 },
-    { color: '--accent', dash: [12, 5, 3, 5], width: 2.5 },
-    { color: '--text', dash: [2, 4], width: 2.5 },
-    { color: '--text-2', dash: [10, 6], width: 2.5 },
-  ];
+  // Each exercise's chart line has its own color (--series-1…8 in styles.css, a palette checked
+  // for color-blind separation and contrast in both themes), assigned in exercise order so it
+  // stays put when other lines are toggled. Colors that are hard to tell apart side by side
+  // (orange/red, aqua/magenta, …) also differ in dash pattern; past 8 exercises the colors
+  // come round again with the next pattern.
+  const DASHES = [[], [7, 6], [2, 5], [12, 5, 3, 5]]; // solid, dashed, dotted, dash-dot
+  const SERIES_DASH = [0, 0, 0, 1, 1, 2, 2, 3];      // pattern for each --series-N color
   const RING_C = 2 * Math.PI * 20; // ring radius 20 in a 48 viewBox
 
   const $ = (sel) => document.querySelector(sel);
@@ -63,6 +63,7 @@
     lessonSkip: new Set(),   // suggestions skipped this session
     lesson: null,            // the lesson in progress
     gems: 0,
+    gemBoostUntil: 0,        // ms timestamp; a lesson started before it earns BOOST × gems
     bonusFreezes: 0,         // bought with gems; each lifts the one-per-week freeze limit once
   };
 
@@ -153,7 +154,7 @@
   /* ================= data ================= */
 
   async function loadAll() {
-    const [all, entries, freezes, reminderEnabled, reminderTime, areas, done, adjust, gems, bonus] = await Promise.all([
+    const [all, entries, freezes, reminderEnabled, reminderTime, areas, done, adjust, gems, boostUntil, bonus] = await Promise.all([
       DB.getExercises({ includeArchived: true }),
       DB.getAllEntries(),
       DB.getFreezes(),
@@ -163,9 +164,11 @@
       DB.getMeta('lessonsDone', []),
       DB.getMeta('lessonAdjust', 0),
       DB.getMeta('gems', 0),
+      DB.getMeta('gemBoostUntil', 0),
       DB.getMeta('bonusFreezes', 0),
     ]);
     state.gems = Number(gems) || 0;
+    state.gemBoostUntil = Number(boostUntil) || 0;
     state.bonusFreezes = Number(bonus) || 0;
     if (Array.isArray(areas) && areas.length) state.lessonAreas = areas;
     state.lessonsDone = Array.isArray(done) ? done : [];
@@ -510,7 +513,12 @@
 
   function lineStyleFor(exId) {
     const i = Math.max(0, state.exercises.findIndex((e) => e.id === exId));
-    return LINE_STYLES[i % LINE_STYLES.length];
+    const n = SERIES_DASH.length;
+    return {
+      color: `--series-${(i % n) + 1}`,
+      dash: DASHES[(SERIES_DASH[i % n] + Math.floor(i / n)) % DASHES.length],
+      width: 2.5,
+    };
   }
 
   function swatch(style, on) {
@@ -662,6 +670,23 @@
   const unitWord = (ex, n) => (ex.unit === 'sec' ? n + ' sec' : plural(n, 'rep')) + (ex.note ? ' ' + ex.note : '');
   const chips = (areas) => el('div', { class: 'area-chips static' }, areaLabels(areas).map((a) => el('span', { class: 'area-chip on' }, a)));
 
+  /* Finishing a lesson starts a gem boost: a lesson started in the next 20 minutes earns 1.5×. */
+  const boostLeft = () => Math.max(0, state.gemBoostUntil - Date.now());
+  const gemsFor = (boosted) => (boosted ? Math.ceil(GEM_REWARD * BOOST) : GEM_REWARD); // 7.5 rounds up to 8
+  let boostTimer = null;
+
+  function renderBoost() {
+    clearTimeout(boostTimer);
+    const left = boostLeft();
+    $('#learn-boost').hidden = !left;
+    if (!left) return;
+    $('#learn-boost-title').textContent = `${BOOST}× gem boost`;
+    $('#learn-boost-body').textContent =
+      `Start a lesson within ${plural(Math.ceil(left / 60000), 'minute')} to earn ${gemsFor(true)} gems instead of ${GEM_REWARD}.`;
+    // Redraw when the minute count drops, and hide once the boost runs out.
+    boostTimer = setTimeout(() => { if (state.view === 'learn') renderBoost(); }, (left % 60000 || 60000) + 50);
+  }
+
   function renderLearn() {
     const ctx = lessonContext();
     const ex = L.pickLesson({
@@ -692,13 +717,14 @@
 
     $('#learn-gems').replaceChildren(el('span', { html: ICONS.gem }), String(state.gems));
     $('#learn-gems').setAttribute('aria-label', plural(state.gems, 'gem'));
+    renderBoost();
     const short = FREEZE_COST - state.gems;
     $('#learn-shop').replaceChildren(el('div', { class: 'shop-card' },
       el('span', { class: 'shop-icon', 'aria-hidden': 'true', html: ICONS.flake }),
       el('span', { class: 'row-main' },
         el('span', { class: 'row-title' }, 'Bonus streak freeze'),
         el('span', { class: 'row-sub' }, short > 0
-          ? `${FREEZE_COST} gems · ${short} to go (${Math.ceil(short / GEM_REWARD)} more lessons)`
+          ? `${FREEZE_COST} gems · ${short} to go (${plural(Math.ceil(short / GEM_REWARD), 'more lesson')})`
           : `${FREEZE_COST} gems · covers an extra day in any week`),
         state.bonusFreezes ? el('span', { class: 'row-sub' }, `You have ${plural(state.bonusFreezes, 'bonus freeze')}`) : null),
       el('button', { class: 'btn-primary shop-buy', disabled: short > 0, onclick: buyFreeze }, 'Buy')));
@@ -783,6 +809,7 @@
     state.lesson = {
       ex, level: ctx.level, why: L.why(ex, ctx.trained, ctx.level), steps: L.buildLesson(ex, ctx.level),
       i: 0, done: [], right: 0, asked: 0, feel: null, log: true,
+      boosted: boostLeft() > 0, // started during a boost: keeps it even if the boost ends mid-lesson
     };
     $('#lesson').hidden = false;
     document.documentElement.classList.add('lesson-open');
@@ -919,7 +946,8 @@
           },
         }, label)));
       body.replaceChildren(...head('Lesson complete', ex.name + ' ✓'),
-        el('div', { class: 'gem-reward', role: 'status' }, el('span', { html: ICONS.gem }), `+${GEM_REWARD} gems`),
+        el('div', { class: 'gem-reward', role: 'status' }, el('span', { html: ICONS.gem }), `+${gemsFor(l.boosted)} gems`,
+          l.boosted ? el('span', { class: 'boost-tag' }, `${BOOST}× boost`) : null),
         el('div', { class: 'stat-row' },
           stat(ex.unit === 'sec' ? 'Seconds' : 'Reps', fmt(total)), stat('Sets', String(l.done.length)), stat('Quiz', `${l.right}/${l.asked}`)),
         el('h3', { class: 'ls-sub' }, 'How did that feel?'), seg,
@@ -938,10 +966,13 @@
     const { ex } = l;
     const today = todayKey();
     const logged = l.log && total > 0;
+    const reward = gemsFor(l.boosted);
     state.lessonsDone.push({ id: ex.id, name: ex.name, date: today, total, unit: ex.unit, feel: l.feel });
     state.lessonAdjust = Math.max(-2, Math.min(2, state.lessonAdjust + ({ easy: 1, hard: -1 }[l.feel] || 0)));
-    state.gems += GEM_REWARD;
+    state.gems += reward;
+    state.gemBoostUntil = Date.now() + BOOST_MS; // every finished lesson (re)starts the boost
     await DB.setMeta('gems', state.gems);
+    await DB.setMeta('gemBoostUntil', state.gemBoostUntil);
     await DB.setMeta('lessonsDone', state.lessonsDone);
     await DB.setMeta('lessonAdjust', state.lessonAdjust);
     if (logged) {
@@ -954,7 +985,7 @@
     }
     closeLesson();
     await refreshAll();
-    toast(`+${GEM_REWARD} gems` + (logged ? ` — ${ex.name} logged on Today` : ''));
+    toast(`+${reward} gems` + (logged ? ` — ${ex.name} logged on Today` : ''));
   }
 
 
