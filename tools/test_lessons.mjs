@@ -40,3 +40,11 @@ for (const ex of L.LIBRARY) {
 assert.equal(L.target(L.LIBRARY.find((e) => e.id === 'squat'), 1), 12);
 assert.ok(L.target(L.LIBRARY.find((e) => e.id === 'squat'), 3) > 12);
 console.log('lessons ok');
+
+// Every exercise has an animated form figure.
+await import('../js/figures.js');
+for (const ex of L.LIBRARY) {
+  const svg = globalThis.RepFigures.svg(ex.id, ex.name);
+  assert.ok(svg.startsWith('<svg') && svg.includes('fig-head') && !svg.includes('undefined') && !svg.includes('NaN'), ex.id);
+}
+console.log('figures ok');

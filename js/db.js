@@ -6,7 +6,8 @@
  *   exercises: { id, name, order, archived, createdAt }
  *   entries:   { id: "YYYY-MM-DD|exerciseId", date, exerciseId, reps }
  *   meta:      { key, value }
- *   freezes:   { date, reason, createdAt }  — permanent: add-only, never edited or deleted
+ *   freezes:   { date, reason, createdAt, bonus? }  — permanent: add-only, never edited or deleted
+ *   meta.gems / meta.bonusFreezes: earned from lessons; a bonus freeze lifts the one-per-week limit once
  */
 (function (global) {
   'use strict';
@@ -159,7 +160,8 @@
     /**
      * Add a streak freeze. Rules, enforced here so no UI path can skip them:
      *  - a written reason is required
-     *  - at most one freeze per Monday–Sunday week (by the frozen date)
+     *  - at most one freeze per Monday–Sunday week (by the frozen date), unless a
+     *    bonus freeze (bought with gems) is spent on the extra day
      *  - the day must not be in the future and must have no reps logged
      *  - freezes are permanent: there is deliberately no update/delete API
      */
@@ -169,20 +171,42 @@
       if (reason.length < 3) throw new Error('Write a reason for the freeze (at least a few characters).');
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > todayKey()) throw new Error('You can only freeze today or a past day.');
       const freeze = { date, reason, createdAt: Date.now() };
-      await tx(['freezes', 'entries'], 'readwrite', async (t) => {
+      await tx(['freezes', 'entries', 'meta'], 'readwrite', async (t) => {
         const fs = t.objectStore('freezes');
-        const [existing, entries] = await Promise.all([
+        const me = t.objectStore('meta');
+        const [existing, entries, bonusRow] = await Promise.all([
           reqToPromise(fs.getAll()),
           reqToPromise(t.objectStore('entries').index('date').getAll(date)),
+          reqToPromise(me.get('bonusFreezes')),
         ]);
         if (existing.some((f) => f.date === date)) throw new Error('That day is already frozen.');
+        if (entries.some((e) => e.reps > 0)) throw new Error('That day already has reps logged — no freeze needed.');
         const wk = weekStart(date);
         const clash = existing.find((f) => weekStart(f.date) === wk);
-        if (clash) throw new Error(`You already used this week's freeze (on ${clash.date}). Only one per week.`);
-        if (entries.some((e) => e.reps > 0)) throw new Error('That day already has reps logged — no freeze needed.');
+        if (clash) {
+          const bonus = Number(bonusRow && bonusRow.value) || 0;
+          if (bonus < 1) throw new Error(`You already used this week's freeze (on ${clash.date}). Only one per week — or buy a bonus freeze with gems in Learn.`);
+          me.put({ key: 'bonusFreezes', value: bonus - 1 });
+          freeze.bonus = true;
+        }
         fs.add(freeze); // add, never put: can't overwrite an existing freeze
       });
       return freeze;
+    },
+
+    /** Spend `cost` gems on one bonus streak freeze. Returns { gems, bonusFreezes }. */
+    async buyFreeze(cost) {
+      let result;
+      await tx(['meta'], 'readwrite', async (t) => {
+        const me = t.objectStore('meta');
+        const [g, b] = await Promise.all([reqToPromise(me.get('gems')), reqToPromise(me.get('bonusFreezes'))]);
+        const gems = Number(g && g.value) || 0;
+        if (gems < cost) throw new Error(`You need ${cost} gems — you have ${gems}.`);
+        result = { gems: gems - cost, bonusFreezes: (Number(b && b.value) || 0) + 1 };
+        me.put({ key: 'gems', value: result.gems });
+        me.put({ key: 'bonusFreezes', value: result.bonusFreezes });
+      });
+      return result;
     },
 
     /* ---------- meta / settings ---------- */
@@ -283,15 +307,18 @@
 
         const fs = t.objectStore('freezes');
         const { weekStart } = global.RepStats;
-        const weeks = new Set((await reqToPromise(fs.getAllKeys())).map((d) => weekStart(String(d))));
-        (data.freezes || []).forEach((f) => {
-          // Same one-per-week rule as addFreeze (also covers an existing freeze for that day).
-          if (weeks.has(weekStart(f.date))) return;
+        const days = new Set((await reqToPromise(fs.getAllKeys())).map(String));
+        const weeks = new Set([...days].map((d) => weekStart(d)));
+        [...(data.freezes || [])].sort((a, b) => !!a.bonus - !!b.bonus).forEach((f) => { // regular freezes claim their week first
+          // Same one-per-week rule as addFreeze; bonus freezes were already paid for with gems.
+          if (days.has(f.date) || (!f.bonus && weeks.has(weekStart(f.date)))) return;
           weeks.add(weekStart(f.date));
+          days.add(f.date);
           fs.add({
             date: f.date,
             reason: String(f.reason).slice(0, MAX_REASON),
             createdAt: Number(f.createdAt) || Date.now(),
+            ...(f.bonus ? { bonus: true } : {}),
           });
         });
       });

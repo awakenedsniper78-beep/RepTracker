@@ -496,3 +496,43 @@ html.lesson-open, html.lesson-open body { overflow: hidden; }
 .lesson.is-wrong .ls-verdict { color: var(--red); }
 .lesson.is-right .lesson-foot .btn-primary { background: var(--green); }
 .lesson.is-wrong .lesson-foot .btn-primary { background: var(--red); }
+
+/* Form figures, video link, gems */
+.ls-figure { margin: 4px 0 12px; padding: 10px 8px 6px; border-radius: var(--radius); background: var(--fill); }
+.ls-figure figcaption { text-align: center; font-size: 14px; font-weight: 600; color: var(--text-2); margin-top: 2px; }
+.fig { width: 100%; max-width: 320px; height: auto; margin: 0 auto; }
+.fig line { stroke-linecap: round; }
+.fig-limb { stroke: var(--accent); stroke-width: 8; }
+.fig-torso { stroke: var(--accent); stroke-width: 12; }
+.fig-head { fill: var(--accent); }
+.fig-ground { stroke: var(--card-border); stroke-width: 3; }
+.fig-prop { fill: var(--ring-track); }
+.fig-bar { stroke: var(--text-3); stroke-width: 5; }
+.ls-video { display: inline-flex; align-items: center; gap: 8px; margin: 2px 0 14px; color: var(--accent); font-weight: 700; font-size: 16px; text-decoration: none; }
+.ls-tip + .ls-video { margin-top: 14px; }
+.ls-video svg, .gem-pill svg, .gem-reward svg, .shop-icon svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ls-video svg { width: 24px; height: 24px; }
+.gem-pill {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 36px; padding: 0 14px;
+  border-radius: 999px; background: var(--fill); color: var(--gem); font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums;
+}
+.gem-pill svg { width: 20px; height: 20px; }
+.gem-reward {
+  display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 18px; padding: 14px;
+  border-radius: var(--radius); background: var(--gem-bg); color: var(--gem); font-size: 24px; font-weight: 800;
+  animation: gem-pop .7s cubic-bezier(.3, 1.6, .5, 1) both;
+}
+.gem-reward svg { width: 30px; height: 30px; animation: gem-spin 1.2s ease-out .2s both; }
+@keyframes gem-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes gem-spin { from { transform: rotateY(0); } to { transform: rotateY(720deg); } }
+@media (prefers-reduced-motion: reduce) { .gem-reward, .gem-reward svg { animation: none; } }
+.shop-card {
+  display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--card); border: 1.5px solid var(--card-border); box-shadow: var(--shadow);
+}
+.shop-icon { width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--ice-bg); color: var(--ice); }
+.shop-icon svg { width: 22px; height: 22px; }
+.shop-buy { height: 40px; padding: 0 20px; font-size: 16px; flex-shrink: 0; }
+:root { --gem: #a24bdc; --gem-bg: rgba(162, 75, 220, .1); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --gem: #c77dff; --gem-bg: rgba(199, 125, 255, .14); } }
+:root[data-theme="dark"] { --gem: #c77dff; --gem-bg: rgba(199, 125, 255, .14); }

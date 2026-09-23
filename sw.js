@@ -1,7 +1,7 @@
 /* RepTracker service worker: offline app shell + push reminders.
  * Bump VERSION whenever any cached file changes so clients pick up the update.
  */
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.7.0';
 const CACHE = 'reptracker-' + VERSION;
 
 const SHELL = [
@@ -13,6 +13,7 @@ const SHELL = [
   'js/stats.js',
   'js/db.js',
   'js/lessons.js',
+  'js/figures.js',
   'js/app.js',
   'vendor/chart.umd.min.js',
   'icons/icon-192-v3.png',

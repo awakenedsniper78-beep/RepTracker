@@ -5,6 +5,9 @@
   const { todayKey, addDays, fromKey, toKey, dailyTotals, weekStart, streaks } = window.RepStats;
   const DB = window.RepDB;
   const L = window.RepLessons;
+  const FIG = window.RepFigures;
+  const GEM_REWARD = 5;      // gems per finished lesson
+  const FREEZE_COST = 100;   // gems for one bonus streak freeze
   const CONFIG = window.REPTRACKER_CONFIG || {};
 
   // Chart lines are told apart by dash pattern (and a little by color), as in the design.
@@ -37,6 +40,8 @@
     minus: '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
     plus: '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>',
     bell: '<svg viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+    gem: '<svg viewBox="0 0 24 24"><path d="M6.5 4h11L21 9l-9 11L3 9z"/><path d="M3 9h18M9.5 4 8 9l4 11 4-11-1.5-5"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="4"/><path d="M10 9v6l5-3z"/></svg>',
     flake: '<svg viewBox="0 0 24 24"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5 12 7l2.5-2.5M9.5 19.5 12 17l2.5 2.5"/></svg>',
   };
 
@@ -57,6 +62,8 @@
     lessonAdjust: 0,         // -2..2, nudged by "too easy / too hard"
     lessonSkip: new Set(),   // suggestions skipped this session
     lesson: null,            // the lesson in progress
+    gems: 0,
+    bonusFreezes: 0,         // bought with gems; each lifts the one-per-week freeze limit once
   };
 
   let chart = null;
@@ -146,7 +153,7 @@
   /* ================= data ================= */
 
   async function loadAll() {
-    const [all, entries, freezes, reminderEnabled, reminderTime, areas, done, adjust] = await Promise.all([
+    const [all, entries, freezes, reminderEnabled, reminderTime, areas, done, adjust, gems, bonus] = await Promise.all([
       DB.getExercises({ includeArchived: true }),
       DB.getAllEntries(),
       DB.getFreezes(),
@@ -155,7 +162,11 @@
       DB.getMeta('lessonAreas', null),
       DB.getMeta('lessonsDone', []),
       DB.getMeta('lessonAdjust', 0),
+      DB.getMeta('gems', 0),
+      DB.getMeta('bonusFreezes', 0),
     ]);
+    state.gems = Number(gems) || 0;
+    state.bonusFreezes = Number(bonus) || 0;
     if (Array.isArray(areas) && areas.length) state.lessonAreas = areas;
     state.lessonsDone = Array.isArray(done) ? done : [];
     state.lessonAdjust = Number(adjust) || 0;
@@ -317,9 +328,9 @@
     ring('#ring-longest', s.longest ? 1 : 0);
 
     const used = freezeInWeek(today);
-    $('#freeze-status').textContent = used
-      ? `This week's streak freeze is used (${formatDate(used.date)}).`
-      : '1 streak freeze available this week.';
+    $('#freeze-status').textContent = (used
+      ? `This week's streak freeze is used (${formatDate(used.date)})`
+      : '1 streak freeze available this week') + bonusText() + '.';
 
     const notice = $('#today-notice');
     const freezeBtn = $('#notice-freeze');
@@ -340,7 +351,7 @@
       $('#notice-body').textContent = s.current > 0
         ? `Log a set to keep your ${s.current}-day streak going.`
         : 'Log a set to start a streak.';
-      freezeBtn.hidden = !(s.current > 0 && !used);
+      freezeBtn.hidden = !(s.current > 0 && canFreeze(today));
     } else {
       notice.hidden = true;
     }
@@ -429,6 +440,10 @@
     return state.freezes.find((f) => weekStart(f.date) === wk);
   }
 
+  /** A freeze is available for `date` if its week's is unused, or a bonus freeze is in hand. */
+  const canFreeze = (date) => !freezeInWeek(date) || state.bonusFreezes > 0;
+  const bonusText = () => (state.bonusFreezes ? ` + ${plural(state.bonusFreezes, 'bonus freeze')}` : '');
+
   function weekLabel(date) {
     const start = weekStart(date);
     const o = { month: 'short', day: 'numeric' };
@@ -450,19 +465,19 @@
     }
     if (dayTotal(date) > 0 || !state.exercises.length) { box.replaceChildren(); return; }
     const used = freezeInWeek(date);
-    if (used) {
+    if (!canFreeze(date)) {
       box.replaceChildren(el('p', { class: 'freeze-note' },
-        `The streak freeze for ${weekLabel(date)} was used on ${formatDate(used.date)}.`));
+        `The streak freeze for ${weekLabel(date)} was used on ${formatDate(used.date)}. Earn gems in Learn to buy a bonus freeze.`));
       return;
     }
     box.replaceChildren(el('button', { class: 'freeze-action', onclick: () => useFreeze(date) },
-      '❄︎ Use a streak freeze for this day'));
+      used ? '❄︎ Use a bonus freeze for this day' : '❄︎ Use a streak freeze for this day'));
   }
 
   async function useFreeze(date) {
     const res = await ask({
       title: `Freeze ${formatDate(date)}?`,
-      body: `This keeps your streak alive across this day and uses your one freeze for ${weekLabel(date)}. ` +
+      body: `This keeps your streak alive across this day and uses ${freezeInWeek(date) ? `one of your bonus freezes (you have ${state.bonusFreezes})` : `your one freeze for ${weekLabel(date)}`}. ` +
         'Write down why. The freeze and its reason are permanent and can\'t be edited or removed.',
       input: { placeholder: 'Reason (e.g. sick, travelling, sore shoulder)', minLength: 3, maxLength: 280 },
       actions: [{ label: 'Use freeze permanently', value: 'freeze' }],
@@ -472,6 +487,7 @@
       await flushSaves();
       const f = await DB.addFreeze(date, res.text);
       state.freezes.push(f);
+      if (f.bonus) state.bonusFreezes--;
       renderView();
       toast('Streak freeze saved');
     } catch (err) {
@@ -674,6 +690,19 @@
         el('button', { class: 'text-btn lc-skip', onclick: () => { state.lessonSkip.add(ex.id); renderLearn(); } }, 'Show me a different one')));
     }
 
+    $('#learn-gems').replaceChildren(el('span', { html: ICONS.gem }), String(state.gems));
+    $('#learn-gems').setAttribute('aria-label', plural(state.gems, 'gem'));
+    const short = FREEZE_COST - state.gems;
+    $('#learn-shop').replaceChildren(el('div', { class: 'shop-card' },
+      el('span', { class: 'shop-icon', 'aria-hidden': 'true', html: ICONS.flake }),
+      el('span', { class: 'row-main' },
+        el('span', { class: 'row-title' }, 'Bonus streak freeze'),
+        el('span', { class: 'row-sub' }, short > 0
+          ? `${FREEZE_COST} gems · ${short} to go (${Math.ceil(short / GEM_REWARD)} more lessons)`
+          : `${FREEZE_COST} gems · covers an extra day in any week`),
+        state.bonusFreezes ? el('span', { class: 'row-sub' }, `You have ${plural(state.bonusFreezes, 'bonus freeze')}`) : null),
+      el('button', { class: 'btn-primary shop-buy', disabled: short > 0, onclick: buyFreeze }, 'Buy')));
+
     $('#learn-area-list').replaceChildren(...chips(state.lessonAreas).children);
     const done = state.lessonsDone.slice().reverse();
     $('#learn-done-count').textContent = done.length ? plural(done.length, 'lesson') : '';
@@ -683,6 +712,22 @@
           el('span', { class: 'row-title' }, d.name),
           el('span', { class: 'row-sub' }, `${formatDate(d.date)} · ${fmt(d.total)} ${d.unit === 'sec' ? 'sec' : 'reps'}`))))
       : [el('div', { class: 'row' }, el('span', { class: 'row-sub' }, 'Finish a lesson and it shows up here.'))]));
+  }
+
+  async function buyFreeze() {
+    const c = await ask({
+      title: 'Buy a bonus streak freeze?',
+      body: `Costs ${FREEZE_COST} gems. Use it from History on any missed day — even in a week where you already used your freeze.`,
+      actions: [{ label: `Buy for ${FREEZE_COST} gems`, value: 'buy' }],
+    });
+    if (c !== 'buy') return;
+    try {
+      Object.assign(state, await DB.buyFreeze(FREEZE_COST));
+      renderLearn();
+      toast('Bonus streak freeze added');
+    } catch (err) {
+      toast(err.message);
+    }
   }
 
   /* ---------- Focus areas (body map) ---------- */
@@ -717,6 +762,22 @@
   const clock = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   const buzz = () => { try { if (navigator.vibrate) navigator.vibrate(200); } catch (_) { /* unsupported */ } };
   const logName = (ex) => ex.name + (ex.unit === 'sec' ? ' (sec)' : '');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+  /** The looping form animation for an exercise (paused if the user prefers reduced motion). */
+  function figure(ex, caption) {
+    const box = el('figure', { class: 'ls-figure', html: FIG.svg(ex.id, `${ex.name}: correct form`) });
+    const svg = box.querySelector('svg');
+    if (svg && reduceMotion.matches) svg.pauseAnimations();
+    if (caption) box.append(el('figcaption', {}, caption));
+    return box;
+  }
+
+  const videoLink = (ex) => el('a', {
+    class: 'ls-video', target: '_blank', rel: 'noopener',
+    href: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(`how to do ${ex.name} proper form`),
+    html: ICONS.play,
+  }, 'Watch how on YouTube');
 
   function startLesson(ex, ctx) {
     state.lesson = {
@@ -770,13 +831,14 @@
     body.scrollTop = 0;
 
     if (step.type === 'intro') {
-      body.replaceChildren(...head('New exercise', ex.name), chips(ex.areas), text(l.why),
+      body.replaceChildren(...head('New exercise', ex.name), figure(ex), videoLink(ex), chips(ex.areas), text(l.why),
         text(`You’ll learn the form, answer two quick questions, and do 3 sets of ${unitWord(ex, L.target(ex, l.level))}.`, 'muted'));
       lessonButton('Let’s go', nextStep);
     } else if (step.type === 'learn') {
       body.replaceChildren(...head('How to do it', ex.name),
         el('ol', { class: 'ls-steps' }, ex.steps.map((s) => el('li', {}, s))),
-        el('div', { class: 'ls-tip' }, el('strong', {}, 'Watch out: '), ex.tip));
+        el('div', { class: 'ls-tip' }, el('strong', {}, 'Watch out: '), ex.tip),
+        videoLink(ex));
       lessonButton('Got it', nextStep);
     } else if (step.type === 'quiz') {
       let picked = null;
@@ -799,6 +861,7 @@
           b.classList.toggle('wrong', j === picked && !right);
         });
         $('#lesson').className = 'lesson ' + (right ? 'is-right' : 'is-wrong');
+        if (!right) body.append(figure(ex, 'This is how it should look'));
         $('#lesson-foot').replaceChildren(
           el('div', { class: 'ls-verdict', role: 'status' }, right ? 'Nice!' : `Not quite — it’s “${step.options[step.answer]}”. You’ll get this one again.`),
           el('button', { class: 'btn-primary block', onclick: nextStep }, 'Continue'));
@@ -856,6 +919,7 @@
           },
         }, label)));
       body.replaceChildren(...head('Lesson complete', ex.name + ' ✓'),
+        el('div', { class: 'gem-reward', role: 'status' }, el('span', { html: ICONS.gem }), `+${GEM_REWARD} gems`),
         el('div', { class: 'stat-row' },
           stat(ex.unit === 'sec' ? 'Seconds' : 'Reps', fmt(total)), stat('Sets', String(l.done.length)), stat('Quiz', `${l.right}/${l.asked}`)),
         el('h3', { class: 'ls-sub' }, 'How did that feel?'), seg,
@@ -876,6 +940,8 @@
     const logged = l.log && total > 0;
     state.lessonsDone.push({ id: ex.id, name: ex.name, date: today, total, unit: ex.unit, feel: l.feel });
     state.lessonAdjust = Math.max(-2, Math.min(2, state.lessonAdjust + ({ easy: 1, hard: -1 }[l.feel] || 0)));
+    state.gems += GEM_REWARD;
+    await DB.setMeta('gems', state.gems);
     await DB.setMeta('lessonsDone', state.lessonsDone);
     await DB.setMeta('lessonAdjust', state.lessonAdjust);
     if (logged) {
@@ -888,7 +954,7 @@
     }
     closeLesson();
     await refreshAll();
-    toast(logged ? `Lesson done — ${ex.name} logged on Today` : 'Lesson done!');
+    toast(`+${GEM_REWARD} gems` + (logged ? ` — ${ex.name} logged on Today` : ''));
   }
 
 
