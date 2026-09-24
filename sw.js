@@ -1,7 +1,7 @@
 /* RepTracker service worker: offline app shell + push reminders.
  * Bump VERSION whenever any cached file changes so clients pick up the update.
  */
-const VERSION = 'v1.8.0';
+const VERSION = 'v1.8.1';
 const CACHE = 'reptracker-' + VERSION;
 
 const SHELL = [
@@ -76,7 +76,6 @@ async function buildReminder(payload) {
     s = self.RepStats.streaks(entries, freezes);
   } catch (err) { /* DB unavailable: fall back to generic text */ }
 
-  const enabled = await self.RepDB.getMeta('reminderEnabled', true).catch(() => true);
   if (s.frozenToday && !s.loggedToday) {
     return { title: 'RepTracker', body: 'Today is covered by a streak freeze ❄️ — rest up.', silent: true };
   }
@@ -87,12 +86,14 @@ async function buildReminder(payload) {
       silent: true,
     };
   }
+  // Pushes only come while Daily reminder is on, so this one always alerts
+  // ("When I open the app" is a separate, in-app reminder).
   return {
     title: payload.title || 'Time to log your reps',
     body: s.current > 0
       ? `Don't break your ${s.current}-day streak — log today's reps.`
       : (payload.body || 'Nothing logged today yet. Knock out a set!'),
-    silent: !enabled,
+    silent: false,
   };
 }
 

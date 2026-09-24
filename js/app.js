@@ -258,6 +258,24 @@
     else if (v === 'areas') renderAreas();
   }
 
+  /**
+   * Move "today" along when the date changes: the app came back on a new day, or was left open
+   * past midnight (a timer checks again just after each midnight). Without this, Today's
+   * steppers would keep logging to yesterday.
+   */
+  let dayTimer = null;
+  function syncToday() {
+    clearTimeout(dayTimer);
+    const today = todayKey();
+    if (today !== state.lastSeenToday) {
+      if (state.date === state.lastSeenToday) state.date = today;
+      state.calMonth = state.date.slice(0, 8) + '01';
+      state.lastSeenToday = today;
+      if (ready) renderView();
+    }
+    dayTimer = setTimeout(() => { syncToday(); checkReminder(); }, fromKey(addDays(today, 1)) - Date.now() + 1000);
+  }
+
   /* ================= stepper (shared by Today and History) ================= */
 
   function stepper(date, ex) {
@@ -790,6 +808,39 @@
   const logName = (ex) => ex.name + (ex.unit === 'sec' ? ' (sec)' : '');
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
+  /**
+   * Count down `sec` seconds by the wall clock, so a hold or rest keeps the right time even when
+   * iOS pauses the page (screen lock, app switch). Calls onTick(secondsLeft) as it changes, then onDone().
+   */
+  function countdown(sec, onTick, onDone) {
+    const end = Date.now() + sec * 1000;
+    let shown = sec;
+    clearInterval(lessonTimer);
+    lessonTimer = setInterval(() => {
+      const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+      if (left !== shown) { shown = left; onTick(left); }
+      if (!left) { clearInterval(lessonTimer); onDone(); }
+    }, 250);
+  }
+
+  /* Keep the screen on during a lesson so auto-lock doesn't hide a timer. The browser drops the
+     lock whenever the app is hidden; keepAwake() takes it again when the app is back. */
+  let wakeLock = null;
+  async function keepAwake() {
+    if (!state.lesson || wakeLock || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (!state.lesson || wakeLock) { lock.release().catch(() => {}); return; } // lesson closed while waiting
+      wakeLock = lock;
+      lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+    } catch (_) { /* unsupported (e.g. Home Screen apps before iOS 18.4): the timers still keep time */ }
+  }
+
+  function letSleep() {
+    if (wakeLock) wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
+
   /** The looping form animation for an exercise (paused if the user prefers reduced motion). */
   function figure(ex, caption) {
     const box = el('figure', { class: 'ls-figure', html: FIG.svg(ex.id, `${ex.name}: correct form`) });
@@ -814,10 +865,12 @@
     $('#lesson').hidden = false;
     document.documentElement.classList.add('lesson-open');
     renderLessonStep();
+    keepAwake();
   }
 
   function closeLesson() {
     clearInterval(lessonTimer);
+    letSleep();
     state.lesson = null;
     $('#lesson').hidden = true;
     document.documentElement.classList.remove('lesson-open');
@@ -907,11 +960,7 @@
       };
       lessonButton('Start timer', () => {
         lessonButton('Stop early', finish, { cls: 'secondary' });
-        lessonTimer = setInterval(() => {
-          left--;
-          big.textContent = clock(left);
-          if (left <= 0) finish();
-        }, 1000);
+        countdown(step.target, (s) => { left = s; big.textContent = clock(s); }, finish);
       });
     } else if (step.type === 'set') {
       let n = step.target;
@@ -925,14 +974,9 @@
           el('button', { class: 'step-btn plus', 'aria-label': 'More', html: ICONS.plus, onclick: () => adj(1) })));
       lessonButton('Done', () => { l.done.push(n); nextStep(); });
     } else if (step.type === 'rest') {
-      let left = step.sec;
-      const big = el('div', { class: 'ls-big', role: 'timer' }, clock(left));
+      const big = el('div', { class: 'ls-big', role: 'timer' }, clock(step.sec));
       body.replaceChildren(...head('Rest', 'Catch your breath'), big, text(`Up next: set ${step.next} of 3`, 'muted center'));
-      lessonTimer = setInterval(() => {
-        left--;
-        big.textContent = clock(Math.max(0, left));
-        if (left <= 0) { buzz(); nextStep(); }
-      }, 1000);
+      countdown(step.sec, (s) => { big.textContent = clock(s); }, () => { buzz(); nextStep(); });
       lessonButton('Skip rest', nextStep, { cls: 'secondary' });
     } else if (step.type === 'finish') {
       const total = l.done.reduce((a, b) => a + b, 0);
@@ -1447,14 +1491,9 @@
         flushSaves().catch(console.error);
         return;
       }
-      const today = todayKey();
-      if (today !== state.lastSeenToday) {
-        if (state.date === state.lastSeenToday) state.date = today;
-        state.calMonth = state.date.slice(0, 8) + '01';
-        state.lastSeenToday = today;
-        if (ready) renderView();
-      }
+      syncToday();
       checkReminder();
+      keepAwake();
     });
     window.addEventListener('pagehide', () => { flushSaves().catch(() => {}); });
   }
@@ -1479,6 +1518,7 @@
     const param = new URLSearchParams(location.search).get('view');
     showView(param === 'log' ? 'today' : (param || 'today'));
     ready = true;
+    syncToday();
     checkReminder();
     // Ask the browser not to evict our data (best effort; helps on some platforms).
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});

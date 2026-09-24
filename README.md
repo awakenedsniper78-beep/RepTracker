@@ -14,7 +14,7 @@ no build step, no backend. All data stays on your device in IndexedDB.
 - **Progress**: reps-per-day chart (30D / 90D / 1Y); tap an exercise to show or hide
   its line (each exercise has its own color), plus Best, Average and Change for the range
 - **Learn**: 5-minute, Duolingo-style lessons that teach a new exercise (how-to, quick quiz,
-  3 guided sets with rest timers). Picks adapt to your logged reps and "too easy / too hard"
+  3 guided sets with rest timers; the screen stays on during a lesson). Picks adapt to your logged reps and "too easy / too hard"
   feedback; choose focus areas by tapping a body map in Settings › Lessons. Each lesson shows an
   animated form figure (also shown when you miss a question) and a YouTube link, and earns
   5 gems. Finishing a lesson starts a 20-minute 1.5× gem boost: a lesson you start in that time
