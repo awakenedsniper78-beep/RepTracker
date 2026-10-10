@@ -555,3 +555,8 @@ html.lesson-open, html.lesson-open body { overflow: hidden; }
 :root { --gem: #a24bdc; --gem-bg: rgba(162, 75, 220, .1); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --gem: #c77dff; --gem-bg: rgba(199, 125, 255, .14); } }
 :root[data-theme="dark"] { --gem: #c77dff; --gem-bg: rgba(199, 125, 255, .14); }
+
+/* ---------- Windows app (html.desktop, set by app.js) ---------- */
+html.desktop, html.desktop .lesson-body { scrollbar-width: thin; scrollbar-color: var(--text-3) transparent; }
+html.desktop button.row:hover, html.desktop a.row:hover { background: var(--control); }
+html.desktop .tabbar button:not(.active):hover { color: var(--text); }

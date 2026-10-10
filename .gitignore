@@ -3,3 +3,4 @@ push/package-lock.json
 *.log
 .DS_Store
 vapid*.json
+desktop/dist/

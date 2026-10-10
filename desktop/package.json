@@ -1,0 +1,21 @@
+{
+  "name": "reptracker",
+  "productName": "RepTracker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "RepTracker for Windows: log daily push-ups, pull-ups and other bodyweight reps.",
+  "author": "RepTracker",
+  "homepage": "https://github.com/awakenedsniper78-beep/RepTracker",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --config electron-builder.config.js --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  }
+}

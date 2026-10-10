@@ -11,6 +11,7 @@
   const BOOST_MS = 20 * 60 * 1000;
   const FREEZE_COST = 20;    // gems for one bonus streak freeze
   const CONFIG = window.REPTRACKER_CONFIG || {};
+  const DESKTOP = window.RepTrackerDesktop || null; // the Windows app's bridge (desktop/preload.js); null in a browser
 
   // Each exercise's chart line has its own color (--series-1…8 in styles.css, a palette checked
   // for color-blind separation and contrast in both themes), assigned in exercise order so it
@@ -56,7 +57,7 @@
     freezes: [],             // permanent streak freezes { date, reason, createdAt }
     chartSelected: null,     // Set of exercise ids
     chartRange: '30',
-    settings: { reminderEnabled: true, reminderTime: '19:00' },
+    settings: { reminderEnabled: true, reminderTime: '19:00', background: false }, // background: Windows app's tray reminder
     lessonAreas: L.AREAS.map(([a]) => a), // focus areas picked on the body map
     lessonsDone: [],         // { id, name, date, total, unit, feel }
     lessonAdjust: 0,         // -2..2, nudged by "too easy / too hard"
@@ -70,6 +71,7 @@
   let chart = null;
   let ready = false; // true once data is loaded and the first screen rendered
   let reminderTimer = null;
+  let reminderBusy = false; // a reminder check is mid-way, so overlapping checks can't both notify
   const saveTimers = new Map();
 
   /* ================= helpers ================= */
@@ -1000,7 +1002,8 @@
     renderThemeSeg();
     renderPushStatus();
     renderBackupStatus();
-    $('#app-version').textContent = 'RepTracker v' + (CONFIG.version || 'dev') + ' · all data stays on this device';
+    $('#app-version').textContent = 'RepTracker v' + (CONFIG.version || 'dev') + (DESKTOP ? ' for Windows' : '') +
+      ' · all data stays on this device';
   }
 
   /* ---------- Exercises sub-screen ---------- */
@@ -1093,6 +1096,7 @@
       if (choice === 'system') localStorage.removeItem('rt-theme');
       else localStorage.setItem('rt-theme', choice);
     } catch (_) { /* private mode: still applies for this session */ }
+    if (DESKTOP) DESKTOP.setTheme(choice).catch(() => {}); // the window's title bar follows
     applyTheme(choice);
     renderThemeSeg(choice);
   }
@@ -1109,7 +1113,9 @@
     const when = last
       ? 'Last exported ' + new Date(last).toLocaleDateString(undefined, { month: 'long', day: 'numeric' }) + '.'
       : 'Not exported yet.';
-    $('#backup-status').textContent = when + ' Safari can clear site data after long inactivity, so export now and then.';
+    $('#backup-status').textContent = when + (DESKTOP
+      ? ' Your data is saved on this PC. Export now and then to keep a copy, or to move it to another device.'
+      : ' Safari can clear site data after long inactivity, so export now and then.');
   }
 
   async function exportData() {
@@ -1117,6 +1123,15 @@
     const data = await DB.exportAll();
     const json = JSON.stringify(data, null, 2);
     const name = `reptracker-backup-${todayKey()}.json`;
+    if (DESKTOP) {
+      // A Windows "Save as" dialog; nothing happens if it's cancelled.
+      const res = await DESKTOP.saveBackup(name, json);
+      if (!res || !res.saved) return;
+      await DB.setMeta('lastBackup', Date.now());
+      renderBackupStatus();
+      toast('Backup saved');
+      return;
+    }
     const file = new File([json], name, { type: 'application/json' });
 
     // On iPhone the share sheet ("Save to Files") is the most reliable path,
@@ -1186,7 +1201,8 @@
     if (!ready) return;
     if (state.view === 'today') renderTodaySummary();
     const s = streaks(state.entries, state.freezes);
-    if (!state.settings.reminderEnabled || s.loggedToday || s.frozenToday) return;
+    // The Windows app's Daily reminder notifies even with the in-app reminder switched off.
+    if (!(state.settings.reminderEnabled || state.settings.background) || s.loggedToday || s.frozenToday) return;
 
     const due = reminderDue();
     const now = new Date();
@@ -1196,19 +1212,27 @@
       return;
     }
     const today = todayKey();
-    if ((await DB.getMeta('lastNotified', null)) === today) return;
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (reminderBusy) return;
+    reminderBusy = true;
     try {
-      const reg = await navigator.serviceWorker?.ready;
+      if ((await DB.getMeta('lastNotified', null)) === today) return;
       const body = s.current > 0
         ? `You haven't logged any reps today. Keep your ${s.current}-day streak going!`
         : 'You haven\'t logged any reps today.';
-      const opts = { body, icon: 'icons/icon-192-v3.png', badge: 'icons/icon-192-v3.png', tag: 'daily-reminder' };
-      if (reg && reg.showNotification) await reg.showNotification('RepTracker', opts);
-      else new Notification('RepTracker', opts);
+      if (DESKTOP) {
+        DESKTOP.notify('RepTracker', body);
+      } else {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        const reg = await navigator.serviceWorker?.ready;
+        const opts = { body, icon: 'icons/icon-192-v3.png', badge: 'icons/icon-192-v3.png', tag: 'daily-reminder' };
+        if (reg && reg.showNotification) await reg.showNotification('RepTracker', opts);
+        else new Notification('RepTracker', opts);
+      }
       await DB.setMeta('lastNotified', today);
     } catch (err) {
       console.warn('Notification failed', err);
+    } finally {
+      reminderBusy = false;
     }
   }
 
@@ -1236,6 +1260,17 @@
     const setup = $('#push-setup');
     if (CONFIG.repoUrl) $('#push-secrets-link').href = CONFIG.repoUrl + '/settings/secrets/actions';
     const base = 'Daily reminders need iOS 16.4 or later, RepTracker on your Home Screen, and notifications allowed.';
+
+    if (DESKTOP) {
+      // Windows app: no Web Push; instead RepTracker waits in the system tray to show the reminder.
+      toggle.disabled = false;
+      toggle.checked = state.settings.background;
+      setup.hidden = true;
+      foot.textContent = state.settings.background
+        ? 'RepTracker starts with Windows and stays in the system tray when you close it, so the reminder comes at the time above. To quit, right-click its tray icon.'
+        : 'Turn on to get the reminder even with the window closed: RepTracker then starts with Windows and waits in the system tray.';
+      return;
+    }
 
     if (!CONFIG.vapidPublicKey || !pushSupported()) {
       toggle.checked = false;
@@ -1282,7 +1317,11 @@
     const toggle = e.target;
     toggle.disabled = true;
     try {
-      if (toggle.checked) {
+      if (DESKTOP) {
+        state.settings.background = await DESKTOP.setBackground(toggle.checked);
+        toast(state.settings.background ? 'Daily reminder on' : 'Daily reminder turned off');
+        checkReminder();
+      } else if (toggle.checked) {
         await subscribePush();
         toast('Now copy the setup code into GitHub');
       } else {
@@ -1323,7 +1362,8 @@
   /* ================= service worker ================= */
 
   async function registerSW() {
-    if (!('serviceWorker' in navigator)) return;
+    // The Windows app ships its files with it (and updates itself), so it needs no offline cache.
+    if (DESKTOP || !('serviceWorker' in navigator)) return;
     try {
       const reg = await navigator.serviceWorker.register('sw.js');
       const promptUpdate = (worker) => {
@@ -1447,22 +1487,46 @@
         flushSaves().catch(console.error);
         return;
       }
-      const today = todayKey();
-      if (today !== state.lastSeenToday) {
-        if (state.date === state.lastSeenToday) state.date = today;
-        state.calMonth = state.date.slice(0, 8) + '01';
-        state.lastSeenToday = today;
-        if (ready) renderView();
-      }
+      newDay();
       checkReminder();
     });
     window.addEventListener('pagehide', () => { flushSaves().catch(() => {}); });
+  }
+
+  /** Moves Today (and History, if it was on today) to the new date after midnight. True if it did. */
+  function newDay() {
+    const today = todayKey();
+    if (today === state.lastSeenToday) return false;
+    if (state.date === state.lastSeenToday) state.date = today;
+    state.calMonth = state.date.slice(0, 8) + '01';
+    state.lastSeenToday = today;
+    if (ready) renderView();
+    return true;
+  }
+
+  /* ================= Windows app (desktop/) ================= */
+
+  async function initDesktop() {
+    document.documentElement.classList.add('desktop');
+    DESKTOP.setTheme(currentThemeChoice()).catch(() => {});
+    DESKTOP.onFlush(flushSaves); // the window is closing: write pending rep counts first
+    DESKTOP.on('update-ready', () => {
+      toast('A new version is ready', { label: 'Update', fn: () => DESKTOP.installUpdate() });
+    });
+    DESKTOP.on('show-view', (view) => { if (ready && !state.lesson) showView(view); });
+    try { state.settings.background = !!(await DESKTOP.getBackground()); } catch (_) { /* keep off */ }
+    // The window can stay open, or hidden in the tray, for days: catch the date changing and a
+    // reminder time that passed while the PC was asleep.
+    setInterval(() => {
+      if (newDay() || Date.now() >= reminderDue().getTime()) checkReminder();
+    }, 60 * 1000);
   }
 
   async function init() {
     applyTheme(currentThemeChoice());
     bindEvents();
     registerSW();
+    if (DESKTOP) await initDesktop();
     try {
       await DB.ensureDefaults();
       await loadAll();

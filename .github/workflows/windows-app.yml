@@ -1,0 +1,114 @@
+name: Windows app
+
+# Builds RepTracker-Setup.exe on Windows, then installs it, opens it, checks that it works and
+# uninstalls it. On main it publishes the installer as a GitHub Release tagged v<version from
+# js/config.js>: the README's download link and the app's auto-update both read the latest one.
+on:
+  push:
+    paths:
+      - index.html
+      - manifest.json
+      - sw.js
+      - css/**
+      - js/**
+      - vendor/**
+      - icons/**
+      - desktop/**
+      - .github/workflows/windows-app.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write   # publish the release
+
+concurrency:
+  group: windows-app-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install build tools
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+
+      - name: Build RepTracker-Setup.exe
+        working-directory: desktop
+        run: npm run dist
+
+      - name: Install it, open it, uninstall it
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\reptracker'
+          $exe = Join-Path $dir 'RepTracker.exe'
+
+          Start-Process desktop\dist\RepTracker-Setup.exe -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and -not (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (-not (Test-Path $exe)) { throw "RepTracker.exe was not installed to $dir" }
+          $links = @(
+            (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\RepTracker.lnk'),
+            (Join-Path ([Environment]::GetFolderPath('Desktop')) 'RepTracker.lnk')
+          )
+          foreach ($link in $links) { if (-not (Test-Path $link)) { throw "Missing shortcut $link" } }
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+            Get-ItemProperty | Where-Object DisplayName -eq 'RepTracker'
+          if (-not $entry) { throw 'No RepTracker entry in Settings > Apps' }
+          Write-Host "Installed RepTracker $($entry.DisplayVersion) to $dir"
+
+          # Open it twice: log a rep, close the window, then check the rep is still there.
+          foreach ($mode in 'log', 'check') {
+            $port = if ($mode -eq 'log') { 9222 } else { 9223 }
+            $app = Start-Process $exe -ArgumentList "--remote-debugging-port=$port" -PassThru
+            node desktop\test\smoke.mjs $port $mode "smoke-$mode.png"
+            $ok = $LASTEXITCODE -eq 0
+            $closed = $app.CloseMainWindow() -and $app.WaitForExit(20000)
+            Get-Process RepTracker -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 2
+            if (-not $ok) { throw "Smoke test ($mode) failed" }
+            if (-not $closed) { throw 'RepTracker did not quit when its window was closed' }
+          }
+
+          & (Join-Path $dir 'Uninstall RepTracker.exe') /currentuser /S
+          for ($i = 0; $i -lt 60 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { throw 'Uninstalling did not remove RepTracker' }
+          Write-Host 'Uninstalled cleanly'
+          exit 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RepTracker-Setup
+          path: |
+            desktop/dist/RepTracker-Setup.exe
+            smoke-*.png
+          if-no-files-found: warn
+
+      - name: Publish the GitHub Release
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "/version:\s*'([^']+)'/.exec(require('fs').readFileSync('js/config.js', 'utf8'))[1]")
+          tag="v$version"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "::notice::Release $tag already exists, so nothing new was published. Bump the version in js/config.js and sw.js to publish a new one."
+            exit 0
+          fi
+          notes="Download **RepTracker-Setup.exe** below and run it. It installs RepTracker for your Windows user (no admin needed), adds Start menu and desktop shortcuts, and opens it. Installed copies update themselves.
+
+          Windows may say it protected your PC, because the installer isn't code-signed: click **More info**, then **Run anyway**."
+          gh release create "$tag" desktop/dist/RepTracker-Setup.exe desktop/dist/RepTracker-Setup.exe.blockmap desktop/dist/latest.yml \
+            --title "RepTracker $version" --notes "$notes" --target "$GITHUB_SHA"
